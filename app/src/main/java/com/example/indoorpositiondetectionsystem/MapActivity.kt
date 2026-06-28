@@ -19,10 +19,10 @@ class MapActivity : AppCompatActivity() {
     private lateinit var mapDetectedLab: TextView
 
     private val routerMap = mapOf(
-        "00:0A:EB:13:09:69" to "LAB 1",
+        "8C:86:DD:41:F3:73" to "LAB 1",
         "EC:75:0C:15:0F:40" to "LAB 2",
         "40:3F:8C:E0:72:36" to "LAB 3",
-        "CC:2D:21:57:F5:48" to "LAB 4"
+        "CC:2D:21:1F:4F:DO" to "LAB 4"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {

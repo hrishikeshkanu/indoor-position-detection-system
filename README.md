@@ -1,6 +1,6 @@
 # 📡 Indoor Position Detection System
 
-An Android application that detects your real-time indoor position using **WiFi RSSI (Received Signal Strength Indicator)** signals from access points placed in different lab rooms. No GPS required — works entirely indoors.
+An Android application that detects your real-time indoor position using WiFi RSSI (Received Signal Strength Indicator) signals from access points placed in different lab rooms. No GPS required — works entirely indoors.
 
 ---
 
@@ -30,13 +30,14 @@ app/
 └── src/
     └── main/
         ├── java/com/example/indoorpositiondetectionsystem/
-        │   ├── MainActivity.kt       # Signal dashboard, permission handling, auto-refresh
-        │   ├── MapActivity.kt        # Floor map screen with live scanning
-        │   └── MapView.kt            # Custom View — draws routers, zones, YOU dot
+        │   ├── MainActivity.kt        # Signal dashboard, permission handling, auto-refresh, detection timing
+        │   ├── MapActivity.kt         # Floor map screen with live scanning
+        │   ├── MapView.kt             # Custom View — draws routers, coverage zones, YOU dot
+        │   └── SignalGraphView.kt     # Custom View — horizontal RSSI bar graph with legend
         └── res/
             └── layout/
-                ├── activity_main.xml # Signal list UI
-                └── activity_map.xml  # Map UI
+                ├── activity_main.xml  # Signal list UI with graph and timing stats
+                └── activity_map.xml   # Map UI
 ```
 
 ---
