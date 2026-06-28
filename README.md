@@ -6,11 +6,12 @@ An Android application that detects your real-time indoor position using WiFi RS
 
 ## 📱 Screenshots
 
-| Signal Dashboard | Floor Map |
-|:---:|:---:|
-| ![Signal Page](screenshots/1.png) | ![Map Page](screenshots/2.png) |
+| Signal Dashboard | Floor Map | Proximity Graph | Detection Time Comparison | 
+|:---:|:---:|:---:|:---:|
+| ![Signal Page](screenshots/1.png) | ![Map Page](screenshots/2.png) | ![Graph Page](screenshots/3.png) | ![Detection Time Comparison Page](screenshots/4.png) |
 
 ---
+
 
 ## 🧠 How It Works
 
