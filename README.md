@@ -1,10 +1,10 @@
-# 📡 Indoor Position Detection System
+#  Indoor Position Detection System
 
 An Android application that detects your real-time indoor position using WiFi RSSI (Received Signal Strength Indicator) signals from access points placed in different lab rooms. No GPS required — works entirely indoors.
 
 ---
 
-## 📱 Screenshots
+##  Screenshots
 
 | Signal Dashboard | Floor Map | Proximity Graph | Detection Time Comparison | 
 |:---:|:---:|:---:|:---:|
@@ -13,7 +13,7 @@ An Android application that detects your real-time indoor position using WiFi RS
 ---
 
 
-## 🧠 How It Works
+##  How It Works
 
 The app scans nearby WiFi access points and reads their RSSI values. Each lab room has a dedicated router with a known MAC address (BSSID). By comparing signal strengths across all 4 routers, the app estimates which room you are in and where exactly inside that room.
 
@@ -24,7 +24,7 @@ The app scans nearby WiFi access points and reads their RSSI values. Each lab ro
 
 ---
 
-## 🗂️ Project Structure
+##  Project Structure
 
 ```
 app/
@@ -43,7 +43,7 @@ app/
 
 ---
 
-## 🚀 Features
+##  Features
 
 - **Live WiFi scanning** — auto-refreshes every 25 seconds, manual refresh available
 - **Signal quality labels** — Strong / Good / Weak / Very Weak / Out of Range with color coding
@@ -54,7 +54,7 @@ app/
 
 ---
 
-## 🏗️ Tech Stack
+##  Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -66,7 +66,7 @@ app/
 
 ---
 
-## 📶 Signal Quality Reference
+##  Signal Quality Reference
 
 | RSSI Range | Label | Color |
 |---|---|---|
@@ -78,7 +78,7 @@ app/
 
 ---
 
-## ⚙️ Setup & Configuration
+##  Setup & Configuration
 
 ### 1. Clone the repository
 ```bash
@@ -107,7 +107,7 @@ Connect your Android device, enable USB debugging, and click **Run**.
 
 ---
 
-## 🔐 Required Permissions
+##  Required Permissions
 
 ```xml
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -117,11 +117,11 @@ Connect your Android device, enable USB debugging, and click **Run**.
 <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 ```
 
-> ⚠️ **Location permission is mandatory.** Android requires Location permission to access WiFi scan results since API 28. The app will prompt the user on first launch.
+>  **Location permission is mandatory.** Android requires Location permission to access WiFi scan results since API 28. The app will prompt the user on first launch.
 
 ---
 
-## ⚠️ Known Limitations
+##  Known Limitations
 
 - **Android 9+ scan throttling** — The OS limits `startScan()` to ~4 calls per 2 minutes per app. This is an OS restriction and cannot be bypassed.
 - **Device location must be ON** — On Android 10+, the device's Location toggle (not just app permission) must be enabled for WiFi scanning to return results.
@@ -130,7 +130,7 @@ Connect your Android device, enable USB debugging, and click **Run**.
 
 ---
 
-## 📐 Distance Formula
+##  Distance Formula
 
 The app uses the **Log-Distance Path Loss** model:
 
@@ -146,7 +146,7 @@ distance = 10 ^ ((TxPower - RSSI) / (10 * n))
 
 ---
 
-## 👨‍💻 Author
+##  Author
 
 **Hrishikesh Kanu**
 B.Sc. in Information & Technology
@@ -154,6 +154,6 @@ Jahangirnagar University, Bangladesh
 
 ---
 
-## 📄 License
+##  License
 
 This project is built for academic purposes as part of a university project.
