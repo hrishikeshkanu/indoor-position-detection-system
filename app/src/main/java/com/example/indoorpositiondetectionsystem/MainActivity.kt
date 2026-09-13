@@ -14,10 +14,16 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
 import kotlin.math.max
 import kotlin.math.min
+
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var auth: FirebaseAuth
+    private lateinit var database: DatabaseReference
     private lateinit var wifiManager: WifiManager
     private var wifiReceiver: BroadcastReceiver? = null
 
@@ -34,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var detectedLabText: TextView
     private lateinit var btnRefresh: Button
     private lateinit var btnViewMap: Button
+    private lateinit var btnLogout: Button
 
     // Graph
     private lateinit var signalGraph: SignalGraphView
@@ -57,10 +64,10 @@ class MainActivity : AppCompatActivity() {
     private var currentRssi: Map<String, Int> = emptyMap()
 
     private val routerMap = mapOf(
-        "8C:86:DD:41:F3:73" to "LAB 1",
-        "EC:75:0C:15:0F:40" to "LAB 2",
-        "40:3F:8C:E0:72:36" to "LAB 3",
-        "CC:2D:21:1F:4F:DO" to "LAB 4"
+        "54:AF:97:28:6B:79" to "LAB 1",
+        "54:AF:97:92:94:37" to "LAB 2",
+        "54:AF:97:92:20:5A" to "LAB 3",
+        "54:AF:97:28:6B:78" to "LAB 4"
     )
 
     // Auto-refresh every 25 seconds
@@ -77,6 +84,17 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        auth = FirebaseAuth.getInstance()
+
+        // ── Auth guard: bounce to Login if not signed in ──────────────────
+        if (auth.currentUser == null) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
+        database = FirebaseDatabase.getInstance().reference
+
         signalText1  = findViewById(R.id.signalText1)
         signalText2  = findViewById(R.id.signalText2)
         signalText3  = findViewById(R.id.signalText3)
@@ -88,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         detectedLabText = findViewById(R.id.detectedLabText)
         btnRefresh   = findViewById(R.id.btnRefresh)
         btnViewMap   = findViewById(R.id.btnViewMap)
+        btnLogout    = findViewById(R.id.btnLogout)
 
         signalGraph = findViewById(R.id.signalGraph)
 
@@ -115,6 +134,13 @@ class MainActivity : AppCompatActivity() {
             // Pass current distances so map shows immediately on open
             intent.putExtra("distances", HashMap(currentDistances))
             startActivity(intent)
+        }
+
+        btnLogout.setOnClickListener {
+            autoRefreshHandler.removeCallbacks(autoRefreshRunnable)
+            auth.signOut()
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
         }
 
         checkPermission()
@@ -214,7 +240,9 @@ class MainActivity : AppCompatActivity() {
                     .filter { it.second > -100 }
                     .maxByOrNull { it.second }
 
-                detectedLabText.text = if (best != null) best.first else "Unknown"
+                val detectedLab = if (best != null) best.first else "Unknown"
+                detectedLabText.text = detectedLab
+                saveScanToFirebase(currentRssi, detectedLab)
 
                 // ---------- Detection Time Statistics ----------
 
@@ -272,6 +300,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ── Permission ──────────────────────────────────────────────────────────
+
+    private fun saveScanToFirebase(rssiMap: Map<String, Int>, detectedLab: String) {
+        val scanData = mapOf(
+            "timestamp" to System.currentTimeMillis(),
+            "detectedLab" to detectedLab,
+            "signals" to rssiMap,
+            "userId" to auth.currentUser?.uid
+        )
+
+        database.child("scans").push().setValue(scanData)
+            .addOnFailureListener {
+                Toast.makeText(this, "Firebase upload failed", Toast.LENGTH_SHORT).show()
+            }
+    }
 
     private fun checkPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)

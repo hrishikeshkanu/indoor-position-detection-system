@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "172230186924",
+    "project_id": "indoor-position-detection",
+    "storage_bucket": "indoor-position-detection.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:172230186924:android:8acfbd95b9b7491bcf0c09",
+        "android_client_info": {
+          "package_name": "com.example.indoorpositiondetectionsystem"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAa1zGR5HXKFINqB-nLpH9-dHA5liOrou0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
