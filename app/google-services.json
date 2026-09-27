@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "172230186924",
+    "firebase_url": "https://indoor-position-detection-default-rtdb.firebaseio.com",
     "project_id": "indoor-position-detection",
     "storage_bucket": "indoor-position-detection.firebasestorage.app"
   },
