@@ -58,4 +58,13 @@ class RegisterActivity : AppCompatActivity() {
                 }
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        // Auto-forward if already signed in
+        if (auth.currentUser != null) {
+            startActivity(Intent(this, MainActivity::class.java))
+            finish()
+        }
+    }
 }
