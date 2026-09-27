@@ -63,13 +63,6 @@ class MainActivity : AppCompatActivity() {
     private var currentDistances: Map<String, Double> = emptyMap()
     private var currentRssi: Map<String, Int> = emptyMap()
 
-    private val routerMap = mapOf(
-        "54:AF:97:28:6B:79" to "LAB 1",
-        "54:AF:97:92:94:37" to "LAB 2",
-        "54:AF:97:92:20:5A" to "LAB 3",
-        "54:AF:97:28:6B:78" to "LAB 4"
-    )
-
     // Auto-refresh every 25 seconds
     private val autoRefreshHandler = Handler(Looper.getMainLooper())
     private val autoRefreshRunnable = object : Runnable {
@@ -197,7 +190,7 @@ class MainActivity : AppCompatActivity() {
 
                 for (r in results) {
                     val bssid = r.BSSID.uppercase()
-                    when (routerMap[bssid]) {
+                    when (RouterConfig.routerMap[bssid]) {
                         "LAB 1" -> r1 = maxOf(r1, r.level)
                         "LAB 2" -> r2 = maxOf(r2, r.level)
                         "LAB 3" -> r3 = maxOf(r3, r.level)

@@ -18,13 +18,6 @@ class MapActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var mapDetectedLab: TextView
 
-    private val routerMap = mapOf(
-        "54:AF:97:28:6B:79" to "LAB 1",
-        "54:AF:97:92:94:37" to "LAB 2",
-        "54:AF:97:92:20:5A" to "LAB 3",
-        "54:AF:97:28:6B:78" to "LAB 4"
-    )
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_map)
@@ -68,7 +61,7 @@ class MapActivity : AppCompatActivity() {
 
                 for (r in results) {
                     val bssid = r.BSSID.uppercase()
-                    when (routerMap[bssid]) {
+                    when (RouterConfig.routerMap[bssid]) {
                         "LAB 1" -> r1 = maxOf(r1, r.level)
                         "LAB 2" -> r2 = maxOf(r2, r.level)
                         "LAB 3" -> r3 = maxOf(r3, r.level)
