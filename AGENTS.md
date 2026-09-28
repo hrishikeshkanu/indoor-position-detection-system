@@ -15,8 +15,8 @@ Current state: login/registration and database connectivity are working. The pro
     - `MapView.kt` – custom Canvas view: router nodes, coverage zones, "YOU" marker
     - `SignalGraphView.kt` – RSSI bar graph on the dashboard
     - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping
-    - `PresenceRepository.kt` – (planned, Stage 1) publishes/reads live user presence
-  - `src/main/res/` – layouts (`activity_main`, `activity_map`, `activity_login`, `activity_register`), drawables, themes
+    - `PresenceRepository.kt` – publishes/reads live user presence
+  - `src/main/res/` – layouts (`activity_main`, `activity_map`, `activity_login`, `activity_register`, `item_active_user`), drawables, themes
   - `google-services.json` – Firebase config; do not replace with placeholders
 - `build.gradle.kts`, `settings.gradle.kts`, `gradle/libs.versions.toml` – Gradle config (version catalog in use)
 - `app/build.gradle.kts` – Firebase deps are BOM-managed
@@ -49,9 +49,9 @@ presence/{uid}   (planned) { uid, name, detectedLab, signals, distances, timesta
 
 ## Feature in progress: multi-user presence
 Stages (implement one at a time, don't skip ahead):
-1. **Write layer** – `PresenceRepository.publish()/clear()`; called after each scan in `MainActivity` and `MapActivity`; `clear()` before `signOut()`.
-2. **Read layer** – ValueEventListener on `presence`, exposes list of active users, filters stale entries (based on `timestamp`), excludes/flags self.
-3. **Main page** – "ACTIVE USERS" card: username + lab per user.
+1. **Write layer** – `PresenceRepository.publish()/clear()`; called after each scan in `MainActivity` and `MapActivity`; `clear()` before `signOut()`. ✅
+2. **Read layer** – ValueEventListener on `presence`, exposes list of active users, filters stale entries (based on `timestamp`), excludes/flags self. ✅
+3. **Main page** – "ACTIVE USERS" card: username + lab per user. ✅
 4. **Map view** – draw other users' dots with name labels using the same estimation math as "YOU"; use a distinct color from the green "YOU" dot; avoid label overlap.
 5. **Polish** – tighten DB rules, tune stale timeout, update README and this file.
 

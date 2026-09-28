@@ -36,7 +36,6 @@ object PresenceRepository {
 
     private var cachedName: String? = null
     private var hasLoadedName = false
-    private var disconnectHookRegistered = false
 
     private var activeListener: PresenceListener? = null
     private var presenceRef: DatabaseReference? = null
@@ -48,12 +47,7 @@ object PresenceRepository {
 
     private val staleRefreshRunnable = object : Runnable {
         override fun run() {
-            val listener = activeListener ?: return
-            val currentTime = System.currentTimeMillis() + serverTimeOffsetMs
-            val filtered = lastRawUsers.filter { currentTime - it.timestamp <= STALE_TIMEOUT_MS }
-                .sortedWith(compareBy<PresenceUser> { if (it.isSelf) 0 else 1 }
-                    .thenBy { it.name.lowercase() })
-            listener.onPresenceChanged(filtered)
+            emitFilteredUsers()
             refreshHandler.postDelayed(this, STALE_REFRESH_MS)
         }
     }
@@ -79,8 +73,8 @@ object PresenceRepository {
         serverTimeOffsetRef = database.child(".info").child("serverTimeOffset")
         val newServerTimeOffsetListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val offset = snapshot.getValue(Long::class.java)
-                serverTimeOffsetMs = offset ?: 0L
+                val offset = (snapshot.value as? Number)?.toLong() ?: 0L
+                serverTimeOffsetMs = offset
                 emitFilteredUsers()
             }
 
@@ -115,10 +109,7 @@ object PresenceRepository {
         val userName = resolveName(uid, currentUser.email)
 
         val presenceRef = database.child("presence").child(uid)
-        if (!disconnectHookRegistered) {
-            presenceRef.onDisconnect().removeValue()
-            disconnectHookRegistered = true
-        }
+        presenceRef.onDisconnect().removeValue()
 
         val presenceData = mapOf(
             "uid" to uid,
@@ -135,16 +126,36 @@ object PresenceRepository {
             }
     }
 
-    fun clear() {
+    fun clear(onDone: () -> Unit = {}) {
         stopListening()
 
-        val currentUser = auth.currentUser ?: return
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
+            cachedName = null
+            hasLoadedName = false
+            onDone()
+            return
+        }
+
         val uid = currentUser.uid
+        var completed = false
+        var timeoutRunnable: Runnable? = null
+        val finishOnce = fun() {
+            if (completed) return
+            completed = true
+            timeoutRunnable?.let { refreshHandler.removeCallbacks(it) }
+            cachedName = null
+            hasLoadedName = false
+            onDone()
+        }
+        timeoutRunnable = Runnable { finishOnce() }
+
+        refreshHandler.postDelayed(timeoutRunnable, 2_000L)
 
         database.child("presence").child(uid).removeValue()
-        cachedName = null
-        hasLoadedName = false
-        disconnectHookRegistered = false
+            .addOnCompleteListener {
+                finishOnce()
+            }
     }
 
     private fun emitFilteredUsers() {

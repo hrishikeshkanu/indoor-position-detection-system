@@ -8,8 +8,11 @@ import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -42,6 +45,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRefresh: Button
     private lateinit var btnViewMap: Button
     private lateinit var btnLogout: Button
+
+    private lateinit var activeUsersContainer: LinearLayout
+    private lateinit var activeUsersEmpty: TextView
+    private lateinit var activeUsersCount: TextView
 
     // Graph
     private lateinit var signalGraph: SignalGraphView
@@ -102,6 +109,10 @@ class MainActivity : AppCompatActivity() {
         btnViewMap   = findViewById(R.id.btnViewMap)
         btnLogout    = findViewById(R.id.btnLogout)
 
+        activeUsersContainer = findViewById(R.id.activeUsersContainer)
+        activeUsersEmpty = findViewById(R.id.activeUsersEmpty)
+        activeUsersCount = findViewById(R.id.activeUsersCount)
+
         signalGraph = findViewById(R.id.signalGraph)
 
         txtCurrentTime = findViewById(R.id.txtCurrentTime)
@@ -132,10 +143,11 @@ class MainActivity : AppCompatActivity() {
 
         btnLogout.setOnClickListener {
             autoRefreshHandler.removeCallbacks(autoRefreshRunnable)
-            PresenceRepository.clear()
-            auth.signOut()
-            startActivity(Intent(this, LoginActivity::class.java))
-            finish()
+            PresenceRepository.clear {
+                auth.signOut()
+                startActivity(Intent(this, LoginActivity::class.java))
+                finish()
+            }
         }
 
         checkPermission()
@@ -143,9 +155,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // TODO Stage 3: replace with Active Users card
         PresenceRepository.startListening { users ->
-            Log.d("PresenceRead", users.joinToString { "${it.name}@${it.detectedLab}${if (it.isSelf) "(me)" else ""}" })
+            renderActiveUsers(users)
         }
     }
 
@@ -172,6 +183,67 @@ class MainActivity : AppCompatActivity() {
             try { unregisterReceiver(it) } catch (_: Exception) {}
             wifiReceiver = null
         }
+    }
+
+    private fun renderActiveUsers(users: List<PresenceUser>) {
+        if (isFinishing || isDestroyed || !::activeUsersContainer.isInitialized) return
+
+        activeUsersContainer.removeAllViews()
+
+        if (users.isEmpty()) {
+            activeUsersEmpty.visibility = View.VISIBLE
+            activeUsersCount.text = "0 online"
+            return
+        }
+
+        activeUsersEmpty.visibility = View.GONE
+        activeUsersCount.text = "${users.size} online"
+
+        for (user in users) {
+            val row = LayoutInflater.from(this).inflate(R.layout.item_active_user, activeUsersContainer, false)
+            val userRow = row.findViewById<LinearLayout>(R.id.userRow)
+            val userBadge = row.findViewById<FrameLayout>(R.id.userBadge)
+            val userBadgeText = row.findViewById<TextView>(R.id.userBadgeText)
+            val userName = row.findViewById<TextView>(R.id.userName)
+            val userSelfTag = row.findViewById<TextView>(R.id.userSelfTag)
+            val userLabText = row.findViewById<TextView>(R.id.userLabText)
+            val userLabRight = row.findViewById<TextView>(R.id.userLabRight)
+
+            userName.text = user.name.ifBlank { "User" }
+            userSelfTag.visibility = if (user.isSelf) View.VISIBLE else View.GONE
+
+            if (user.isSelf) {
+                userRow.setBackgroundColor(Color.parseColor("#0A2A3A"))
+            }
+
+            val lab = user.detectedLab.trim()
+            if (lab.equals("Unknown", ignoreCase = true) || lab.isBlank()) {
+                userBadge.setBackgroundColor(Color.parseColor("#37474F"))
+                userBadgeText.text = "?"
+                userLabText.text = "Locating…"
+                userLabText.setTextColor(Color.parseColor("#7799AA"))
+                userLabRight.text = "–"
+                userLabRight.setTextColor(Color.parseColor("#557799"))
+            } else {
+                val badgeText = lab.filter { it.isDigit() }
+                userBadge.setBackgroundColor(labBadgeColor(lab))
+                userBadgeText.text = badgeText.ifEmpty { "?" }
+                userLabText.text = "in $lab"
+                userLabText.setTextColor(Color.parseColor("#7799AA"))
+                userLabRight.text = lab
+                userLabRight.setTextColor(Color.parseColor("#00E5FF"))
+            }
+
+            activeUsersContainer.addView(row)
+        }
+    }
+
+    private fun labBadgeColor(lab: String): Int = when (lab.trim()) {
+        "LAB 1" -> Color.parseColor("#2E7D32")
+        "LAB 2" -> Color.parseColor("#00838F")
+        "LAB 3" -> Color.parseColor("#4527A0")
+        "LAB 4" -> Color.parseColor("#283593")
+        else -> Color.parseColor("#37474F")
     }
 
     // ── Distance & quality helpers ──────────────────────────────────────────
