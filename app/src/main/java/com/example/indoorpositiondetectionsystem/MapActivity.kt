@@ -84,6 +84,14 @@ class MapActivity : AppCompatActivity() {
 
                 mapDetectedLab.text = if (best != null) "Near: ${best.first}" else "Scanning..."
 
+                val rssiMap = mapOf(
+                    "LAB 1" to r1,
+                    "LAB 2" to r2,
+                    "LAB 3" to r3,
+                    "LAB 4" to r4
+                )
+                PresenceRepository.publish(best?.first ?: "Unknown", rssiMap, distances)
+
                 @Suppress("DEPRECATION")
                 wifiManager.startScan()
             }

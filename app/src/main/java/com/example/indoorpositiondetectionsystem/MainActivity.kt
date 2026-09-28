@@ -131,6 +131,7 @@ class MainActivity : AppCompatActivity() {
 
         btnLogout.setOnClickListener {
             autoRefreshHandler.removeCallbacks(autoRefreshRunnable)
+            PresenceRepository.clear()
             auth.signOut()
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
@@ -236,6 +237,7 @@ class MainActivity : AppCompatActivity() {
                 val detectedLab = if (best != null) best.first else "Unknown"
                 detectedLabText.text = detectedLab
                 saveScanToFirebase(currentRssi, detectedLab)
+                PresenceRepository.publish(detectedLab, currentRssi, currentDistances)
 
                 // ---------- Detection Time Statistics ----------
 

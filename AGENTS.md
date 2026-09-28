@@ -1,114 +1,95 @@
 # AGENTS.md
 
 ## Project overview
-This repository contains an Android application for indoor position detection using WiFi RSSI measurements. The app scans nearby access points, compares their signal strengths, and estimates the current room/position using a room-based indoor positioning model. The project is built in Kotlin, uses Android Views and custom Canvas drawing, and stores scan data in Firebase Realtime Database. Firebase Authentication gates access to the main dashboard.
+Android app (Kotlin, Android Views, custom Canvas drawing) for indoor position detection using WiFi RSSI. The app scans nearby access points, compares signal strengths, and estimates the user's room/position in a lab environment (routers mapped to LAB 1–LAB 4). Firebase Authentication gates the dashboard, and Firebase Realtime Database stores scan data.
 
-The app is designed for a lab environment with several WiFi routers mapped to room names such as LAB 1–LAB 4. It detects the strongest router, estimates the user's likely location inside the corresponding zone, and displays the result in both a signal dashboard and a floor map.
+Current state: login/registration and database connectivity are working. The project is now adding a **multi-user presence feature** (see "Feature in progress" below).
 
 ## Repository structure
 - `app/` – Android app module
-  - `src/main/java/com/example/indoorpositiondetectionsystem/` – Kotlin activities, views, and configuration
-    - `MainActivity.kt` – main signal dashboard, auth guard, permission checks, WiFi scanning, Firebase upload, auto-refresh logic
-    - `MapActivity.kt` – floor-map screen with live WiFi scanning
-    - `MapView.kt` – custom canvas-based map renderer for room zones and device marker
-    - `SignalGraphView.kt` – RSSI graph drawing for the dashboard
-    - `RouterConfig.kt` – central BSSID-to-room mapping for the indoor positioning model
-    - `LoginActivity.kt` and `RegisterActivity.kt` – Firebase authentication flow (LoginActivity is the app's launcher)
-  - `src/main/res/` – layouts, drawables, colors, themes, XML resources
-  - `google-services.json` – Firebase project config (do not replace with placeholder values; treat project ownership carefully)
-- `build.gradle.kts` – root Gradle configuration
-- `app/build.gradle.kts` – app module Gradle config; Firebase deps are BOM-managed (`firebase-bom`), don't mix in separately-pinned Firebase versions
-- `settings.gradle.kts` – includes the app module
-- `README.md` – project overview and project-level documentation
-- `screenshots/` – app screenshots
+  - `src/main/java/com/example/indoorpositiondetectionsystem/`
+    - `LoginActivity.kt` – launcher; auto-forwards to `MainActivity` if already signed in
+    - `RegisterActivity.kt` – creates the account and writes `users/{uid}` (`name`, `email`, `createdAt`)
+    - `MainActivity.kt` – auth guard, permission request, WiFi scanning, dashboard UI, detection-time stats, `scans` upload, 25 s auto-refresh
+    - `MapActivity.kt` – floor-map screen with its own live WiFi scanning
+    - `MapView.kt` – custom Canvas view: router nodes, coverage zones, "YOU" marker
+    - `SignalGraphView.kt` – RSSI bar graph on the dashboard
+    - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping
+    - `PresenceRepository.kt` – (planned, Stage 1) publishes/reads live user presence
+  - `src/main/res/` – layouts (`activity_main`, `activity_map`, `activity_login`, `activity_register`), drawables, themes
+  - `google-services.json` – Firebase config; do not replace with placeholders
+- `build.gradle.kts`, `settings.gradle.kts`, `gradle/libs.versions.toml` – Gradle config (version catalog in use)
+- `app/build.gradle.kts` – Firebase deps are BOM-managed
+- `README.md`, `screenshots/`
 
-## Core architecture
-### Android app flow
-1. `LoginActivity` is the app's launcher; it auto-forwards to `MainActivity` if already signed in.
-2. `MainActivity` checks whether the user is logged in and bounces to `LoginActivity` if not (auth guard — do not remove).
-3. If logged in, it requests location permission and begins WiFi scanning.
-4. Nearby router BSSIDs are matched against the centralized `RouterConfig.routerMap`.
-5. The strongest signal determines the detected lab/room.
-6. Signal values are displayed with labels like Strong, Good, Weak, Very Weak, and Out of Range.
-7. Distance estimates are computed using the log-distance path loss model and passed to the map screen.
-8. Scan results are saved to Firebase under `scans`.
+## Current app flow
+1. `LoginActivity` (sole launcher) → `MainActivity` if signed in.
+2. `MainActivity` auth guard bounces unauthenticated users back to `LoginActivity`.
+3. Requests `ACCESS_FINE_LOCATION`, registers a `SCAN_RESULTS_AVAILABLE_ACTION` receiver, starts scanning.
+4. BSSIDs (uppercased) are matched against `RouterConfig.routerMap`; strongest RSSI per lab wins (`-100` = not seen).
+5. Strongest lab = detected lab. Signal quality labels: Strong ≥ -60, Good ≥ -70, Weak ≥ -80, Very Weak < -80, Out of Range = -100.
+6. Distance = `10 ^ ((-40 - rssi) / (10 * 3.0))`, `99.0` when not seen.
+7. Each scan is pushed to Firebase `scans` (with `timestamp`, `detectedLab`, `signals`, `userId`).
+8. "VIEW MAP" passes current distances to `MapActivity` via the `"distances"` extra; the map also scans on its own.
 
-### Position logic
-- The strongest signal identifies the primary room.
-- Secondary strongest signal helps determine direction/leaning toward another lab.
-- `MapView` estimates a device position inside the primary zone using a directional offset and distance value.
-- Layout is custom-rendered on Canvas instead of relying only on standard Android Views.
+## Position logic (MapView)
+- Routers sit at fixed corners (18% / 14% insets); `zoneRadius = 0.30 * width`; `mapScale = diagonal / 20`.
+- `estimatePosition()`: primary = nearest router, secondary = second nearest; the dot is placed from the primary toward the secondary at `min(primaryDistance * mapScale, zoneRadius - 30)`.
+- Distances `>= 90` render as "–". Keep this math stable; the multi-user work should reuse it, not fork it.
 
-## Key technologies
-- Kotlin
-- Android SDK with AndroidX components
-- `WifiManager.startScan()` and `BroadcastReceiver`
-- Firebase Authentication
-- Firebase Realtime Database
-- Custom Views drawn with `Canvas` and `Paint`
+## Firebase Realtime Database schema
+```
+users/{uid}      { name, email, createdAt }
+scans/{pushId}   { timestamp, detectedLab, signals{LAB n: rssi}, userId }
+presence/{uid}   (planned) { uid, name, detectedLab, signals, distances, timestamp }
+```
+- `presence/{uid}` is OVERWRITTEN with `setValue` (never `push`), removed via `onDisconnect().removeValue()` and on logout.
+- Username source of truth: `users/{uid}/name`; fallback is email prefix, then `"User"`.
+- Target rules: authenticated read; a user may write only their own `presence/{uid}` and `users/{uid}`.
 
-## Build and validation commands
-Use these commands from the project root:
+## Feature in progress: multi-user presence
+Stages (implement one at a time, don't skip ahead):
+1. **Write layer** – `PresenceRepository.publish()/clear()`; called after each scan in `MainActivity` and `MapActivity`; `clear()` before `signOut()`.
+2. **Read layer** – ValueEventListener on `presence`, exposes list of active users, filters stale entries (based on `timestamp`), excludes/flags self.
+3. **Main page** – "ACTIVE USERS" card: username + lab per user.
+4. **Map view** – draw other users' dots with name labels using the same estimation math as "YOU"; use a distinct color from the green "YOU" dot; avoid label overlap.
+5. **Polish** – tighten DB rules, tune stale timeout, update README and this file.
 
+## Invariants (do not break)
+- BSSID map lives only in `RouterConfig.kt`; never redeclare it in activities.
+- Only `LoginActivity` has the `MAIN`/`LAUNCHER` intent-filter.
+- Keep the auth guard in `MainActivity`.
+- Firebase deps stay BOM-managed (`platform("com.google.firebase:firebase-bom:...")`), no individually pinned versions.
+- Preserve runtime permission checks and the room names `LAB 1`–`LAB 4`.
+- No new secrets/credentials in source. Do not add new architecture libraries.
+- Firebase writes are async; never assume completion. Don't Toast on every-scan failures (log with `Log.w`).
+- Keep the dark theme with cyan (`#00E5FF`) and green (`#00FF9C`) accents.
+- Only one activity may hold `LAUNCHER`; check for duplicate/dead manifest entries before adding new ones.
+
+## Known issues / tech debt (fix only when relevant to the task, or when asked)
+- `calculateDistance()` (txPower −40, n = 3.0) is duplicated in `MainActivity` and `MapActivity`; centralize it if either is touched for presence work.
+- `MainActivity`'s receiver stays registered while `MapActivity` is open, so it still receives scan broadcasts and updates detection stats/uploads while paused.
+- Detection-time stats: `scanStartTime` is only set on first scan and manual refresh, not on auto-refresh, so auto-refresh times are inflated.
+- `MapActivity` calls `startScan()` inside every receiver callback (self-triggering loop); Android throttles scans (~4 per 2 min on API 28+).
+- `r.BSSID` is used without null-safety; guard when touching scan loops.
+- `scans` grows unbounded (one push per scan per user); consider retention/cleanup later.
+- Manifest: `package=` attribute is redundant (namespace is in Gradle); `ACCESS_BACKGROUND_LOCATION` and `FOREGROUND_SERVICE` are declared but unused; theme is hard-coded `Theme.AppCompat.Light.NoActionBar` instead of the app theme.
+- `minSdk = 24` in Gradle, but README says API 26 – reconcile.
+- `replay_pid*.log` (JVM crash dump) is in the repo root; delete it and add `replay_pid*.log` to `.gitignore`.
+- README is stale: it still describes `routerMap` inside `MainActivity`/`MapActivity` and omits Login/Register/RouterConfig/Firebase. Update it in Stage 5.
+- `google-services.json` contains an API key (normal for Firebase); restrict it in the Google Cloud console and rely on DB rules for protection.
+
+## Build and validation
 ```bash
 ./gradlew assembleDebug
 ./gradlew test
 ./gradlew connectedDebugAndroidTest
 ```
+`assembleDebug` is the minimum check after any change. Test on a real device with Location toggle ON (required for scan results on Android 10+).
 
-If you are working only on app logic and resources, the most relevant validation is usually:
-
-```bash
-./gradlew assembleDebug
-```
-
-## Known outstanding issues (fix before adding new features)
-- Keep the router-to-room mapping centralized in `RouterConfig.kt`; do not reintroduce duplicated room mappings in `MainActivity` or `MapActivity`.
-- Maintain the single-launcher setup in `AndroidManifest.xml`: only `LoginActivity` should declare the `MAIN`/`LAUNCHER` intent-filter.
-- Keep Firebase dependencies BOM-managed and avoid reintroducing individually pinned versions.
-- Preserve the auth guard flow so unauthenticated users are redirected back to `LoginActivity`.
-
-## Coding conventions for agents
-- Prefer Kotlin idioms and keep code readable and consistent with the existing project style.
-- Preserve the existing room naming convention (`LAB 1` to `LAB 4`) unless a broader project change requires updating all references.
-- Be careful with WiFi/BSSID matching; router addresses are case-insensitive but must match the configured keys exactly after normalization.
-- `routerMap` now lives in `RouterConfig.kt` and should be updated there only. Do not duplicate or re-declare room mappings in `MainActivity`, `MapActivity`, or any other file.
-- Do not hardcode new secrets or Firebase credentials in source files beyond the existing `google-services.json`.
-- Keep XML layouts and custom drawing logic aligned with the existing design language: dark theme, cyan and green accent colors, lab dashboard style.
-- Preserve runtime permission checks and avoid breaking the login guard flow in `MainActivity`.
-- Firebase dependencies should stay BOM-managed (`platform("com.google.firebase:firebase-bom:...")`); don't reintroduce individually pinned Firebase library versions.
-
-## Important behaviors to preserve
-- Location permission is required for WiFi scanning on modern Android.
-- App-level auto-refresh is implemented with a repeating `Handler` and should remain stable when changed.
-- Firebase writes are asynchronous; avoid making assumptions that `setValue()` has completed immediately.
-- `MapView` uses estimated distances to draw the "YOU" marker; keep math stable if modifying the position algorithm.
-- The app is designed for indoor lab-level accuracy rather than precise global positioning.
-- Only one activity should hold the `LAUNCHER` intent-filter at any time.
-
-## Safe edit principles
-- Prefer targeted changes in the relevant activity or custom view.
-- When editing detection logic, validate with debug builds and check for scan result edge cases like missing routers or no valid signal readings.
-- If you modify the room detection model or router mapping, update documentation and any affected screen labels or tests.
-- Avoid unnecessary refactors in the Android UI unless they directly support the task.
-- Before adding new manifest entries, check for existing duplicate/dead declarations first.
-
-## Typical tasks
-- Add or change router mappings for a new laboratory setup
-- Improve the distance/position estimation formula
-- Adjust the UI dashboard values or graph styling
-- Add support for new labs or room names
-- Review Firebase scan logging and auth flow
-- Fix permission handling or Android scanning reliability
-- Keep configuration centralized and maintain repo consistency
-
-## Notes for future agents
-This project is compact but domain-specific. Most functional changes will touch either:
-- WiFi scan and detection logic in `MainActivity.kt`
-- Router mapping configuration in `RouterConfig.kt`
-- Map rendering in `MapView.kt`
-- Firebase auth or scan persistence logic
-- XML layout resources and UI labels
-- `AndroidManifest.xml` and `app/build.gradle.kts` when updating app wiring or dependency management
-
-Keep all changes focused on the indoor WiFi positioning workflow rather than introducing unrelated architecture patterns.
+## Coding conventions
+- Idiomatic, readable Kotlin consistent with the existing style; targeted edits over refactors.
+- Handle edge cases: missing routers, all signals `-100`, null user, null/empty database values.
+- Router BSSIDs are case-insensitive but must match `RouterConfig` keys after `uppercase()`.
+- If you change detection logic, router mapping, or the schema, update README and this file.
+- Accuracy target is room-level, not precise coordinates.
