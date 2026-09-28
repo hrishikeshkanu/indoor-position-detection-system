@@ -8,6 +8,7 @@ import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -138,6 +139,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         checkPermission()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // TODO Stage 3: replace with Active Users card
+        PresenceRepository.startListening { users ->
+            Log.d("PresenceRead", users.joinToString { "${it.name}@${it.detectedLab}${if (it.isSelf) "(me)" else ""}" })
+        }
+    }
+
+    override fun onStop() {
+        PresenceRepository.stopListening()
+        super.onStop()
     }
 
     override fun onResume() {
