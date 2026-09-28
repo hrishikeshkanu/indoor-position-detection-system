@@ -12,7 +12,7 @@ Current state: login/registration and database connectivity are working. The pro
     - `RegisterActivity.kt` – creates the account and writes `users/{uid}` (`name`, `email`, `createdAt`)
     - `MainActivity.kt` – auth guard, permission request, WiFi scanning, dashboard UI, detection-time stats, `scans` upload, 25 s auto-refresh
     - `MapActivity.kt` – floor-map screen with its own live WiFi scanning
-    - `MapView.kt` – custom Canvas view: router nodes, coverage zones, "YOU" marker
+    - `MapView.kt` – custom Canvas view: router nodes, coverage zones, and multi-user markers
     - `SignalGraphView.kt` – RSSI bar graph on the dashboard
     - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping
     - `PresenceRepository.kt` – publishes/reads live user presence
@@ -34,7 +34,7 @@ Current state: login/registration and database connectivity are working. The pro
 
 ## Position logic (MapView)
 - Routers sit at fixed corners (18% / 14% insets); `zoneRadius = 0.30 * width`; `mapScale = diagonal / 20`.
-- `estimatePosition()`: primary = nearest router, secondary = second nearest; the dot is placed from the primary toward the secondary at `min(primaryDistance * mapScale, zoneRadius - 30)`.
+- `estimatePosition(distances)`: primary = nearest usable router, secondary = second nearest; the dot is placed from the primary toward the secondary at `min(primaryDistance * mapScale, zoneRadius - 30)`. Multiple `UserMarker`s use this same math; self is green and others are pink. The self label shows the user's name rather than the literal "YOU".
 - Distances `>= 90` render as "–". Keep this math stable; the multi-user work should reuse it, not fork it.
 
 ## Firebase Realtime Database schema
@@ -52,7 +52,7 @@ Stages (implement one at a time, don't skip ahead):
 1. **Write layer** – `PresenceRepository.publish()/clear()`; called after each scan in `MainActivity` and `MapActivity`; `clear()` before `signOut()`. ✅
 2. **Read layer** – ValueEventListener on `presence`, exposes list of active users, filters stale entries (based on `timestamp`), excludes/flags self. ✅
 3. **Main page** – "ACTIVE USERS" card: username + lab per user. ✅
-4. **Map view** – draw other users' dots with name labels using the same estimation math as "YOU"; use a distinct color from the green "YOU" dot; avoid label overlap.
+4. **Map view** – draw other users' dots with name labels using the same estimation math as "YOU"; use a distinct color from the green "YOU" dot; avoid label overlap. ✅
 5. **Polish** – tighten DB rules, tune stale timeout, update README and this file.
 
 ## Invariants (do not break)

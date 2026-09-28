@@ -8,6 +8,12 @@ import kotlin.math.sqrt
 
 class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
+    data class UserMarker(
+        val name: String,
+        val distances: Map<String, Double>,
+        val isSelf: Boolean
+    )
+
     private val paintBackground = Paint().apply {
         color = Color.parseColor("#0A1625"); style = Paint.Style.FILL
     }
@@ -36,6 +42,12 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val paintDeviceGlow = Paint().apply {
         color = Color.argb(70, 0, 255, 156); style = Paint.Style.FILL
     }
+    private val paintOtherDeviceFill = Paint().apply {
+        color = Color.parseColor("#FF6EC7"); style = Paint.Style.FILL
+    }
+    private val paintOtherDeviceGlow = Paint().apply {
+        color = Color.argb(70, 255, 110, 199); style = Paint.Style.FILL
+    }
     private val paintRouterLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#00E5FF"); textSize = 34f
         textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
@@ -47,9 +59,12 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         color = Color.parseColor("#00FF9C"); textSize = 28f
         textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
     }
+    private val paintOtherDeviceLabel = Paint(paintDeviceLabel).apply {
+        color = Color.parseColor("#FF6EC7")
+    }
 
     private var routers     = mutableMapOf<String, PointF>()
-    private var distances   = mutableMapOf<String, Double>()
+    private var userMarkers: List<UserMarker> = emptyList()
     private var mapScale    = 1f
     private var zoneRadius  = 1f
 
@@ -66,8 +81,13 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         zoneRadius = w * 0.30f
     }
 
+    fun updateUsers(users: List<UserMarker>) {
+        userMarkers = users
+        invalidate()
+    }
+
     fun updateDistances(newDistances: Map<String, Double>) {
-        distances = newDistances.toMutableMap(); invalidate()
+        updateUsers(listOf(UserMarker("YOU", newDistances, true)))
     }
 
     private fun pixelDist(a: PointF, b: PointF): Float {
@@ -101,9 +121,11 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         } else PointF(pos.x, pos.y - labelRadius)
     }
 
-    private fun estimatePosition(): PointF? {
+    private fun estimatePosition(distances: Map<String, Double>): PointF? {
         if (routers.size < 2 || distances.isEmpty()) return null
-        val sorted = distances.entries.filter { routers.containsKey(it.key) }.sortedBy { it.value }
+        val sorted = distances.entries
+            .filter { routers.containsKey(it.key) && it.value < 90.0 }
+            .sortedBy { it.value }
         if (sorted.size < 2) return null
 
         val primaryPt   = routers[sorted[0].key] ?: return null
@@ -125,7 +147,8 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         canvas.drawRect(4f, 4f, w - 4f, h - 4f, paintBorder)
         if (routers.isEmpty()) return
 
-        val pos = estimatePosition()
+        val referenceMarker = userMarkers.firstOrNull { it.isSelf } ?: userMarkers.firstOrNull()
+        val referencePos = referenceMarker?.let { estimatePosition(it.distances) }
 
         for ((_, point) in routers) {
             canvas.drawCircle(point.x, point.y, zoneRadius, paintCoverageFill)
@@ -134,17 +157,32 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         for ((lab, point) in routers) {
             canvas.drawCircle(point.x, point.y, 40f, paintRouterGlow)
             canvas.drawCircle(point.x, point.y, 18f, paintRouterFill)
-            val nameY = routerLabelY(point, pos)
+            val nameY = routerLabelY(point, referencePos)
             canvas.drawText(lab, point.x, nameY, paintRouterLabel)
-            val distText = distances[lab]?.let { if (it < 90.0) "${"%.1f".format(it)} m" else "–" } ?: "–"
+            val distText = referenceMarker?.distances?.get(lab)
+                ?.let { if (it < 90.0) "${"%.1f".format(it)} m" else "–" } ?: "–"
             val distY = if (nameY < point.y) nameY - 24f else nameY + 30f
             canvas.drawText(distText, point.x, distY, paintDistLabel)
         }
-        if (pos != null) {
-            canvas.drawCircle(pos.x, pos.y, 42f, paintDeviceGlow)
-            canvas.drawCircle(pos.x, pos.y, 20f, paintDeviceFill)
-            val labelPt = youLabelOffset(pos)
-            canvas.drawText("YOU", labelPt.x, labelPt.y, paintDeviceLabel)
+
+        val drawnLabelPoints = mutableListOf<PointF>()
+        for (marker in userMarkers) {
+            val pos = estimatePosition(marker.distances) ?: continue
+            val glowPaint = if (marker.isSelf) paintDeviceGlow else paintOtherDeviceGlow
+            val fillPaint = if (marker.isSelf) paintDeviceFill else paintOtherDeviceFill
+            val labelPaint = if (marker.isSelf) paintDeviceLabel else paintOtherDeviceLabel
+            val glowRadius = if (marker.isSelf) 42f else 34f
+            val dotRadius = if (marker.isSelf) 20f else 16f
+
+            canvas.drawCircle(pos.x, pos.y, glowRadius, glowPaint)
+            canvas.drawCircle(pos.x, pos.y, dotRadius, fillPaint)
+
+            var labelPt = youLabelOffset(pos)
+            if (drawnLabelPoints.any { pixelDist(it, labelPt) < 40f }) {
+                labelPt = PointF(labelPt.x, labelPt.y + 24f)
+            }
+            drawnLabelPoints.add(labelPt)
+            canvas.drawText(marker.name, labelPt.x, labelPt.y, labelPaint)
         }
     }
 }

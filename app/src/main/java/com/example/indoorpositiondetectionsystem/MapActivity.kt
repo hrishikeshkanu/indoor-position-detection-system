@@ -9,11 +9,14 @@ import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.google.firebase.auth.FirebaseAuth
 
 class MapActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
     private var wifiReceiver: BroadcastReceiver? = null
+    private var localSelfMarker: MapView.UserMarker? = null
+    private var presenceMarkers: List<MapView.UserMarker>? = null
 
     private lateinit var mapView: MapView
     private lateinit var mapDetectedLab: TextView
@@ -31,7 +34,13 @@ class MapActivity : AppCompatActivity() {
         // Show distances passed from MainActivity immediately
         @Suppress("UNCHECKED_CAST")
         val initialDistances = intent.getSerializableExtra("distances") as? HashMap<String, Double>
-        initialDistances?.let { mapView.updateDistances(it) }
+        initialDistances?.let { passedDistances ->
+            val labDistances = RouterConfig.routerMap.values.distinct().associateWith { lab ->
+                passedDistances[lab] ?: 99.0
+            }
+            localSelfMarker = MapView.UserMarker(selfDisplayName(), labDistances, true)
+            updateDisplayedUsers()
+        }
 
         // Then start live scanning on this screen too
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -39,6 +48,30 @@ class MapActivity : AppCompatActivity() {
         ) {
             startScan()
         }
+
+        PresenceRepository.startListening { users ->
+            presenceMarkers = users.map { user ->
+                MapView.UserMarker(user.name, user.distances, user.isSelf)
+            }
+            updateDisplayedUsers()
+        }
+    }
+
+    private fun selfDisplayName(): String {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        return currentUser?.displayName?.takeIf { it.isNotBlank() }
+            ?: currentUser?.email?.substringBefore("@")?.takeIf { it.isNotBlank() }
+            ?: "Me"
+    }
+
+    private fun updateDisplayedUsers() {
+        val presenceUsers = presenceMarkers
+        val presenceSelf = presenceUsers?.firstOrNull { it.isSelf }
+        val selfMarker = localSelfMarker?.let { marker ->
+            marker.copy(name = presenceSelf?.name ?: marker.name)
+        } ?: presenceSelf
+        val otherUsers = presenceUsers.orEmpty().filterNot { it.isSelf }
+        mapView.updateUsers(listOfNotNull(selfMarker) + otherUsers)
     }
 
     private fun calculateDistance(rssi: Int): Double {
@@ -76,7 +109,14 @@ class MapActivity : AppCompatActivity() {
                     "LAB 4" to calculateDistance(r4)
                 )
 
-                mapView.updateDistances(distances)
+                localSelfMarker = MapView.UserMarker(
+                    presenceMarkers?.firstOrNull { it.isSelf }?.name
+                        ?: localSelfMarker?.name
+                        ?: selfDisplayName(),
+                    distances,
+                    true
+                )
+                updateDisplayedUsers()
 
                 val best = listOf("LAB 1" to r1, "LAB 2" to r2, "LAB 3" to r3, "LAB 4" to r4)
                     .filter { it.second > -100 }
@@ -101,6 +141,11 @@ class MapActivity : AppCompatActivity() {
 
         @Suppress("DEPRECATION")
         wifiManager.startScan()
+    }
+
+    override fun onStop() {
+        PresenceRepository.stopListening()
+        super.onStop()
     }
 
     override fun onDestroy() {
