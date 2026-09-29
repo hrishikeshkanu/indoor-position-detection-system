@@ -25,6 +25,7 @@ object PresenceRepository {
 
     private const val STALE_TIMEOUT_MS = 90_000L
     private const val STALE_REFRESH_MS = 15_000L
+    private const val LOG_TAG = "PresenceDebug"
 
     fun interface PresenceListener {
         fun onPresenceChanged(users: List<PresenceUser>)
@@ -53,6 +54,7 @@ object PresenceRepository {
     }
 
     fun startListening(listener: PresenceListener) {
+        Log.d(LOG_TAG, "startListening listener=${listener}")
         stopListening()
         activeListener = listener
 
@@ -60,11 +62,19 @@ object PresenceRepository {
         val newPresenceListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 lastRawUsers = parsePresenceSnapshot(snapshot)
+                Log.d(
+                    LOG_TAG,
+                    "presence snapshot children=${snapshot.childrenCount}, parsed=${lastRawUsers.size}"
+                )
                 emitFilteredUsers()
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.w("PresenceRepository", "Presence listener cancelled", error.toException())
+                Log.e(
+                    LOG_TAG,
+                    "Presence listener cancelled: code=${error.code}, message=${error.message}, details=${error.details}",
+                    error.toException()
+                )
             }
         }
         presenceListener = newPresenceListener
@@ -75,6 +85,7 @@ object PresenceRepository {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val offset = (snapshot.value as? Number)?.toLong() ?: 0L
                 serverTimeOffsetMs = offset
+                Log.d(LOG_TAG, "serverTimeOffset=$offset")
                 emitFilteredUsers()
             }
 
@@ -104,7 +115,10 @@ object PresenceRepository {
     }
 
     fun publish(detectedLab: String, rssi: Map<String, Int>, distances: Map<String, Double>) {
-        val currentUser = auth.currentUser ?: return
+        val currentUser = auth.currentUser ?: run {
+            Log.d(LOG_TAG, "publish skipped: auth.currentUser is null")
+            return
+        }
         val uid = currentUser.uid
         val userName = resolveName(uid, currentUser.email)
 
@@ -120,13 +134,18 @@ object PresenceRepository {
             "timestamp" to ServerValue.TIMESTAMP
         )
 
+        Log.d(LOG_TAG, "publishing as uid=$uid lab=${detectedLab.ifBlank { "Unknown" }}")
         presenceRef.setValue(presenceData)
+            .addOnSuccessListener {
+                Log.d(LOG_TAG, "publish OK for $uid")
+            }
             .addOnFailureListener { error ->
-                Log.w("PresenceRepository", "Failed to publish presence for $uid", error)
+                Log.e(LOG_TAG, "Failed to publish presence for $uid: ${error.message}", error)
             }
     }
 
     fun clear(onDone: () -> Unit = {}) {
+        Log.d(LOG_TAG, "clear called")
         stopListening()
 
         val currentUser = auth.currentUser
@@ -154,6 +173,7 @@ object PresenceRepository {
 
         database.child("presence").child(uid).removeValue()
             .addOnCompleteListener {
+                Log.d(LOG_TAG, "removeValue completed for $uid")
                 finishOnce()
             }
     }
@@ -164,6 +184,13 @@ object PresenceRepository {
         val filtered = lastRawUsers.filter { currentTime - it.timestamp <= STALE_TIMEOUT_MS }
             .sortedWith(compareBy<PresenceUser> { if (it.isSelf) 0 else 1 }
                 .thenBy { it.name.lowercase() })
+        Log.d(LOG_TAG, "emitFilteredUsers raw=${lastRawUsers.size}, filtered=${filtered.size}")
+        lastRawUsers.forEach { user ->
+            Log.d(
+                LOG_TAG,
+                "raw user uid=${user.uid}, detectedLab=${user.detectedLab}, timestamp=${user.timestamp}, ageMs=${currentTime - user.timestamp}"
+            )
+        }
         listener.onPresenceChanged(filtered)
     }
 
@@ -184,7 +211,7 @@ object PresenceRepository {
 
             val detectedLab = rawEntry["detectedLab"] as? String
             if (detectedLab.isNullOrBlank()) {
-                Log.w("PresenceRepository", "Skipping presence entry without detectedLab for uid=$uid")
+                Log.w(LOG_TAG, "Skipping presence entry key=${child.key} without detectedLab for uid=$uid")
                 continue
             }
 
@@ -194,7 +221,7 @@ object PresenceRepository {
                 else -> null
             }
             if (timestamp == null) {
-                Log.w("PresenceRepository", "Skipping presence entry without valid timestamp for uid=$uid")
+                Log.w(LOG_TAG, "Skipping presence entry key=${child.key} without valid timestamp for uid=$uid")
                 continue
             }
 
