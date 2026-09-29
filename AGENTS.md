@@ -27,7 +27,7 @@ Current state: login/registration and database connectivity are working. The pro
 2. `MainActivity` auth guard bounces unauthenticated users back to `LoginActivity`.
 3. Requests `ACCESS_FINE_LOCATION`, registers a `SCAN_RESULTS_AVAILABLE_ACTION` receiver, starts scanning.
 4. BSSIDs (uppercased) are matched against `RouterConfig.routerMap`; strongest RSSI per lab wins (`-100` = not seen).
-  - LAB 1: `54:AF:97:28:6B:79`; LAB 2: `54:AF:97:92:94:37`
+  - LAB 1: `54:AF:97:28:6B:79`; LAB 2: `3C:78:95:31:6C:54`
   - LAB 3: `40:3F:8C:E0:72:37`; LAB 4: `40:3F:8C:E0:72:36`
 5. Strongest lab = detected lab. Signal quality labels: Strong ≥ -60, Good ≥ -70, Weak ≥ -80, Very Weak < -80, Out of Range = -100.
 6. Distance = `10 ^ ((-40 - rssi) / (10 * 3.0))`, `99.0` when not seen.

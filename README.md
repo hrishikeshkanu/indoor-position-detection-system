@@ -32,7 +32,7 @@ The BSSID-to-room mapping is defined only in `RouterConfig.kt`, in `routerMap`. 
 | Lab | BSSID |
 |---|---|
 | LAB 1 | `54:AF:97:28:6B:79` |
-| LAB 2 | `54:AF:97:92:94:37` |
+| LAB 2 | `3C:78:95:31:6C:54` |
 | LAB 3 | `40:3F:8C:E0:72:37` |
 | LAB 4 | `40:3F:8C:E0:72:36` |
 
