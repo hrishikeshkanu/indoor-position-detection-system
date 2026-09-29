@@ -74,13 +74,6 @@ class MapActivity : AppCompatActivity() {
         mapView.updateUsers(listOfNotNull(selfMarker) + otherUsers)
     }
 
-    private fun calculateDistance(rssi: Int): Double {
-        if (rssi == -100) return 99.0
-        val txPower = -40
-        val n = 3.0
-        return Math.pow(10.0, (txPower - rssi) / (10.0 * n))
-    }
-
     private fun startScan() {
         wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
 
@@ -103,10 +96,10 @@ class MapActivity : AppCompatActivity() {
                 }
 
                 val distances = mapOf(
-                    "LAB 1" to calculateDistance(r1),
-                    "LAB 2" to calculateDistance(r2),
-                    "LAB 3" to calculateDistance(r3),
-                    "LAB 4" to calculateDistance(r4)
+                    "LAB 1" to RouterConfig.calculateDistance(r1),
+                    "LAB 2" to RouterConfig.calculateDistance(r2),
+                    "LAB 3" to RouterConfig.calculateDistance(r3),
+                    "LAB 4" to RouterConfig.calculateDistance(r4)
                 )
 
                 localSelfMarker = MapView.UserMarker(

@@ -1,6 +1,6 @@
 #  Indoor Position Detection System
 
-An Android application that detects your real-time indoor position using WiFi RSSI (Received Signal Strength Indicator) signals from access points placed in different lab rooms. No GPS required — works entirely indoors.
+An Android application that estimates a user's indoor room from WiFi RSSI (Received Signal Strength Indicator) readings from access points mapped to LAB 1–LAB 4. It provides room-level positioning rather than precise coordinates.
 
 ---
 
@@ -13,124 +13,23 @@ An Android application that detects your real-time indoor position using WiFi RS
 ---
 
 
-##  How It Works
+## How It Works
 
-The app scans nearby WiFi access points and reads their RSSI values. Each lab room has a dedicated router with a known MAC address (BSSID). By comparing signal strengths across all 4 routers, the app estimates which room you are in and where exactly inside that room.
+The app scans nearby WiFi access points and compares each mapped router's RSSI. The strongest signal identifies the detected lab. The floor map estimates a position within that lab using the nearest routers and the distance model below; accuracy is intended to be room-level.
 
-**Position estimation logic:**
-- The router with the **strongest signal** = Primary (you are in this lab)
-- The router with the **2nd strongest signal** = Secondary (direction you are leaning toward)
-- Your position dot is placed **inside the primary lab's zone**, offset toward the secondary lab, at a distance proportional to the actual measured distance from the primary router
+The dashboard and map refresh WiFi scans, with a 25-second dashboard auto-refresh and a manual refresh control. Detection statistics report the time from a scan request to its results.
 
----
+## Authentication and Presence
 
-##  Project Structure
+Firebase Authentication with email and password provides Login and Register screens and gates access to the dashboard. Firebase Realtime Database stores scan records under `scans/{pushId}`.
 
-```
-app/
-└── src/
-    └── main/
-        ├── java/com/example/indoorpositiondetectionsystem/
-        │   ├── MainActivity.kt        # Signal dashboard, permission handling, auto-refresh, detection timing
-        │   ├── MapActivity.kt         # Floor map screen with live scanning
-        │   ├── MapView.kt             # Custom View — draws routers, coverage zones, YOU dot
-        │   └── SignalGraphView.kt     # Custom View — horizontal RSSI bar graph with legend
-        └── res/
-            └── layout/
-                ├── activity_main.xml  # Signal list UI with graph and timing stats
-                └── activity_map.xml   # Map UI
-```
+The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{uid}`. Presence is overwritten on each scan and removed on disconnect or logout. The current user is shown with a green marker; other active users are pink. Entries older than 90 seconds are treated as stale.
 
----
+## Router Configuration
 
-##  Features
+The BSSID-to-room mapping is defined only in `RouterConfig.kt`, in `routerMap`. To use this app in another building, replace those BSSIDs with the access point BSSIDs for LAB 1 through LAB 4. Enter addresses in the usual colon-separated form; the app normalizes scanned BSSIDs to uppercase before lookup.
 
-- **Live WiFi scanning** — auto-refreshes every 25 seconds, manual refresh available
-- **Signal quality labels** — Strong / Good / Weak / Very Weak / Out of Range with color coding
-- **Two-page UI** — Signal dashboard and interactive floor map
-- **Smart position dot** — placed inside primary lab zone, leaning toward secondary lab
-- **Overlap-safe labels** — router names and YOU label never overlap each other
-- **No GPS or internet** needed — fully offline, WiFi only
-
----
-
-##  Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Language | Kotlin |
-| Min SDK | Android 8.0 (API 26) |
-| UI | XML Layouts + Custom Canvas View |
-| Positioning | WiFi RSSI + Path-Loss Distance Model |
-| Scanning | `WifiManager.startScan()` + `BroadcastReceiver` |
-
----
-
-##  Signal Quality Reference
-
-| RSSI Range | Label | Color |
-|---|---|---|
-| ≥ -60 dBm | Strong | 🟢 Green |
-| -60 to -70 dBm | Good | 🔵 Cyan |
-| -70 to -80 dBm | Weak | 🟡 Amber |
-| < -80 dBm | Very Weak | 🟠 Orange |
-| Not detected | Out of Range | 🔴 Red |
-
----
-
-##  Setup & Configuration
-
-### 1. Clone the repository
-```bash
-git clone https://github.com/yourusername/IndoorPositionDetectionSystem.git
-```
-
-### 2. Open in Android Studio
-File → Open → select the project folder
-
-### 3. Configure your router MAC addresses
-In `MainActivity.kt` and `MapActivity.kt`, update the `routerMap` with your actual router BSSIDs:
-
-```kotlin
-private val routerMap = mapOf(
-    "00:0A:EB:13:09:69" to "LAB 1",
-    "EC:75:0C:15:0F:40" to "LAB 2",
-    "40:3F:8C:E0:72:36" to "LAB 3",
-    "CC:2D:21:57:F5:48" to "LAB 4"
-)
-```
-
-You can find your router's BSSID by scanning with any WiFi analyzer app.
-
-### 4. Build and run
-Connect your Android device, enable USB debugging, and click **Run**.
-
----
-
-##  Required Permissions
-
-```xml
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-```
-
->  **Location permission is mandatory.** Android requires Location permission to access WiFi scan results since API 28. The app will prompt the user on first launch.
-
----
-
-##  Known Limitations
-
-- **Android 9+ scan throttling** — The OS limits `startScan()` to ~4 calls per 2 minutes per app. This is an OS restriction and cannot be bypassed.
-- **Device location must be ON** — On Android 10+, the device's Location toggle (not just app permission) must be enabled for WiFi scanning to return results.
-- **RSSI fluctuates** — Walls, furniture, people moving, and interference cause signal variation. Position accuracy is room-level, not centimeter-level.
-- **Path-loss model is approximate** — The distance formula assumes open space. Real environments with obstacles will cause some deviation.
-
----
-
-##  Distance Formula
+## Distance Formula
 
 The app uses the **Log-Distance Path Loss** model:
 
@@ -143,6 +42,99 @@ distance = 10 ^ ((TxPower - RSSI) / (10 * n))
 | TxPower | -40 dBm | Reference RSSI at 1 meter |
 | n | 3.0 | Path loss exponent (indoor) |
 | RSSI | measured | Live signal reading in dBm |
+
+When a router is not detected (`RSSI = -100`), the app uses a distance sentinel of `99.0`.
+
+## Setup
+
+1. Clone the repository:
+
+     ```bash
+    git clone https://github.com/hrishikeshkanu/indoor-position-detection-system.git
+     ```
+
+2. Open the cloned project folder in Android Studio and allow Gradle sync to finish.
+
+3. Set up Firebase:
+     - Create a Firebase project and add an Android app with package name `com.example.indoorpositiondetectionsystem`.
+     - Download that app's `google-services.json` and place it at `app/google-services.json`. Use your own Firebase configuration when forking; do not replace it with a placeholder.
+     - Enable the Email/Password provider in Firebase Authentication.
+     - Create a Realtime Database, then open **Realtime Database → Rules**, replace the rules with this JSON, and select **Publish**:
+
+     ```json
+     {
+         "rules": {
+             ".read": false,
+             ".write": false,
+             "scans": {
+                 ".read": "auth != null",
+                 "$scanId": {
+                     ".write": "auth != null && newData.child('userId').val() == auth.uid"
+                 }
+             },
+             "users": {
+                 "$uid": {
+                     ".read": "auth != null",
+                     ".write": "auth != null && auth.uid == $uid"
+                 }
+             },
+             "presence": {
+                 "$uid": {
+                     ".read": "auth != null",
+                     ".write": "auth != null && auth.uid == $uid",
+                     ".validate": "newData.hasChildren(['uid', 'name', 'detectedLab', 'timestamp']) && newData.child('uid').val() == $uid && newData.child('name').isString() && newData.child('detectedLab').isString() && newData.child('timestamp').isNumber()"
+                 }
+             }
+         }
+     }
+     ```
+
+4. Replace the sample router BSSIDs in `RouterConfig.kt` with the real BSSIDs for your four lab access points.
+
+5. Connect an Android device, enable USB debugging, and run the `app` configuration from Android Studio. The minimum supported Android version is API 24.
+
+## Required Permissions
+
+The app declares these permissions:
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.INTERNET" />
+```
+
+Location permission is requested at runtime because Android requires it for WiFi scan results. Firebase Authentication and Realtime Database also require an internet connection.
+
+## Known Limitations
+
+- Android scan throttling limits `startScan()` to roughly four calls per two minutes per app on Android 9 and newer. The OS controls this limit.
+- On Android 10 and newer, the device Location toggle must be ON for WiFi scanning to return results; granting app permission alone may not be enough.
+- RSSI fluctuates with walls, furniture, people, and radio interference. The result targets room-level, not precise coordinate, accuracy.
+- The path-loss model is approximate and real environments can differ from its assumptions.
+
+## Project Structure
+
+| File | Purpose |
+|---|---|
+| `LoginActivity.kt`, `RegisterActivity.kt` | Firebase email/password authentication |
+| `MainActivity.kt` | Dashboard, scan lifecycle, auto-refresh, and detection statistics |
+| `MapActivity.kt`, `MapView.kt` | Live map scanning and Canvas rendering of router and user markers |
+| `RouterConfig.kt` | Single BSSID-to-room mapping and shared distance calculation |
+| `PresenceRepository.kt` | Publish, listen for, and filter live presence |
+| `SignalGraphView.kt` | Dashboard RSSI graph |
+
+## Signal Quality Reference
+
+| RSSI Range | Label |
+|---|---|
+| ≥ -60 dBm | Strong |
+| -60 to -70 dBm | Good |
+| -70 to -80 dBm | Weak |
+| < -80 dBm | Very Weak |
+| Not detected | Out of Range |
 
 ---
 

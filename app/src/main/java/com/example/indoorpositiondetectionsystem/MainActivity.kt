@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var database: DatabaseReference
     private lateinit var wifiManager: WifiManager
     private var wifiReceiver: BroadcastReceiver? = null
+    private var receiverRegistered = false
 
     // Lab row views
     private lateinit var signalText1: TextView
@@ -75,6 +76,7 @@ class MainActivity : AppCompatActivity() {
     private val autoRefreshHandler = Handler(Looper.getMainLooper())
     private val autoRefreshRunnable = object : Runnable {
         override fun run() {
+            scanStartTime = System.currentTimeMillis()
             @Suppress("DEPRECATION")
             wifiManager.startScan()
             autoRefreshHandler.postDelayed(this, REFRESH_INTERVAL_MS)
@@ -167,22 +169,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            registerWifiReceiver()
+        }
         // Restart auto-refresh when coming back from map page
         autoRefreshHandler.removeCallbacks(autoRefreshRunnable)
         autoRefreshHandler.postDelayed(autoRefreshRunnable, REFRESH_INTERVAL_MS)
     }
 
     override fun onPause() {
-        super.onPause()
         autoRefreshHandler.removeCallbacks(autoRefreshRunnable)
+        unregisterWifiReceiver()
+        super.onPause()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        wifiReceiver?.let {
-            try { unregisterReceiver(it) } catch (_: Exception) {}
-            wifiReceiver = null
-        }
+        unregisterWifiReceiver()
+        wifiReceiver = null
     }
 
     private fun renderActiveUsers(users: List<PresenceUser>) {
@@ -248,13 +254,6 @@ class MainActivity : AppCompatActivity() {
 
     // ── Distance & quality helpers ──────────────────────────────────────────
 
-    private fun calculateDistance(rssi: Int): Double {
-        if (rssi == -100) return 99.0
-        val txPower = -40
-        val n = 3.0
-        return Math.pow(10.0, (txPower - rssi) / (10.0 * n))
-    }
-
     /** Returns label text and color for a given RSSI value */
     private fun signalQuality(rssi: Int): Pair<String, Int> = when {
         rssi == -100      -> Pair("Out of Range",  Color.parseColor("#FF4444"))
@@ -304,10 +303,10 @@ class MainActivity : AppCompatActivity() {
 
                 // Store for map navigation
                 currentDistances = mapOf(
-                    "LAB 1" to calculateDistance(r1),
-                    "LAB 2" to calculateDistance(r2),
-                    "LAB 3" to calculateDistance(r3),
-                    "LAB 4" to calculateDistance(r4)
+                    "LAB 1" to RouterConfig.calculateDistance(r1),
+                    "LAB 2" to RouterConfig.calculateDistance(r2),
+                    "LAB 3" to RouterConfig.calculateDistance(r3),
+                    "LAB 4" to RouterConfig.calculateDistance(r4)
                 )
                 currentRssi = mapOf(
                     "LAB 1" to r1, "LAB 2" to r2,
@@ -364,10 +363,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        registerReceiver(
-            wifiReceiver,
-            IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-        )
+        registerWifiReceiver()
 
         // Save scan start time
         scanStartTime = System.currentTimeMillis()
@@ -381,6 +377,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ── Permission ──────────────────────────────────────────────────────────
+
+    private fun registerWifiReceiver() {
+        val receiver = wifiReceiver ?: return
+        if (receiverRegistered) return
+
+        registerReceiver(receiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
+        receiverRegistered = true
+    }
+
+    private fun unregisterWifiReceiver() {
+        val receiver = wifiReceiver ?: return
+        if (!receiverRegistered) return
+
+        try {
+            unregisterReceiver(receiver)
+        } catch (_: Exception) {
+        } finally {
+            receiverRegistered = false
+        }
+    }
 
     private fun saveScanToFirebase(rssiMap: Map<String, Int>, detectedLab: String) {
         val scanData = mapOf(

@@ -14,7 +14,7 @@ Current state: login/registration and database connectivity are working. The pro
     - `MapActivity.kt` – floor-map screen with its own live WiFi scanning
     - `MapView.kt` – custom Canvas view: router nodes, coverage zones, and multi-user markers
     - `SignalGraphView.kt` – RSSI bar graph on the dashboard
-    - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping
+    - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping; also holds `calculateDistance()`
     - `PresenceRepository.kt` – publishes/reads live user presence
   - `src/main/res/` – layouts (`activity_main`, `activity_map`, `activity_login`, `activity_register`, `item_active_user`), drawables, themes
   - `google-services.json` – Firebase config; do not replace with placeholders
@@ -41,7 +41,7 @@ Current state: login/registration and database connectivity are working. The pro
 ```
 users/{uid}      { name, email, createdAt }
 scans/{pushId}   { timestamp, detectedLab, signals{LAB n: rssi}, userId }
-presence/{uid}   (planned) { uid, name, detectedLab, signals, distances, timestamp }
+presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 ```
 - `presence/{uid}` is OVERWRITTEN with `setValue` (never `push`), removed via `onDisconnect().removeValue()` and on logout.
 - Username source of truth: `users/{uid}/name`; fallback is email prefix, then `"User"`.
@@ -53,7 +53,9 @@ Stages (implement one at a time, don't skip ahead):
 2. **Read layer** – ValueEventListener on `presence`, exposes list of active users, filters stale entries (based on `timestamp`), excludes/flags self. ✅
 3. **Main page** – "ACTIVE USERS" card: username + lab per user. ✅
 4. **Map view** – draw other users' dots with name labels using the same estimation math as "YOU"; use a distinct color from the green "YOU" dot; avoid label overlap. ✅
-5. **Polish** – tighten DB rules, tune stale timeout, update README and this file.
+5. **Polish** – tighten DB rules, tune stale timeout, update README and this file. ✅
+
+Multi-user presence feature complete as of Stage 5.
 
 ## Invariants (do not break)
 - BSSID map lives only in `RouterConfig.kt`; never redeclare it in activities.
@@ -67,16 +69,10 @@ Stages (implement one at a time, don't skip ahead):
 - Only one activity may hold `LAUNCHER`; check for duplicate/dead manifest entries before adding new ones.
 
 ## Known issues / tech debt (fix only when relevant to the task, or when asked)
-- `calculateDistance()` (txPower −40, n = 3.0) is duplicated in `MainActivity` and `MapActivity`; centralize it if either is touched for presence work.
-- `MainActivity`'s receiver stays registered while `MapActivity` is open, so it still receives scan broadcasts and updates detection stats/uploads while paused.
-- Detection-time stats: `scanStartTime` is only set on first scan and manual refresh, not on auto-refresh, so auto-refresh times are inflated.
 - `MapActivity` calls `startScan()` inside every receiver callback (self-triggering loop); Android throttles scans (~4 per 2 min on API 28+).
 - `r.BSSID` is used without null-safety; guard when touching scan loops.
 - `scans` grows unbounded (one push per scan per user); consider retention/cleanup later.
-- Manifest: `package=` attribute is redundant (namespace is in Gradle); `ACCESS_BACKGROUND_LOCATION` and `FOREGROUND_SERVICE` are declared but unused; theme is hard-coded `Theme.AppCompat.Light.NoActionBar` instead of the app theme.
-- `minSdk = 24` in Gradle, but README says API 26 – reconcile.
-- `replay_pid*.log` (JVM crash dump) is in the repo root; delete it and add `replay_pid*.log` to `.gitignore`.
-- README is stale: it still describes `routerMap` inside `MainActivity`/`MapActivity` and omits Login/Register/RouterConfig/Firebase. Update it in Stage 5.
+- Manifest theme is hard-coded `Theme.AppCompat.Light.NoActionBar` instead of the app theme.
 - `google-services.json` contains an API key (normal for Firebase); restrict it in the Google Cloud console and rely on DB rules for protection.
 
 ## Build and validation
