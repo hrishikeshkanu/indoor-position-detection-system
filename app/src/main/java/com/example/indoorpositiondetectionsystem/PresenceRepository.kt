@@ -38,13 +38,14 @@ object PresenceRepository {
     private var cachedName: String? = null
     private var hasLoadedName = false
 
-    private var activeListener: PresenceListener? = null
+    private val subscribers = LinkedHashMap<Any, PresenceListener>()
     private var presenceRef: DatabaseReference? = null
     private var presenceListener: ValueEventListener? = null
     private var serverTimeOffsetRef: DatabaseReference? = null
     private var serverTimeOffsetListener: ValueEventListener? = null
     private var serverTimeOffsetMs: Long = 0L
     private var lastRawUsers: List<PresenceUser> = emptyList()
+    private var hasReceivedSnapshot = false
 
     private val staleRefreshRunnable = object : Runnable {
         override fun run() {
@@ -53,15 +54,21 @@ object PresenceRepository {
         }
     }
 
-    fun startListening(listener: PresenceListener) {
-        Log.d(LOG_TAG, "startListening listener=${listener}")
-        stopListening()
-        activeListener = listener
+    fun startListening(owner: Any, listener: PresenceListener) {
+        Log.d(LOG_TAG, "startListening owner=$owner")
+        val isFirstSubscriber = subscribers.isEmpty()
+        subscribers[owner] = listener
+
+        if (!isFirstSubscriber) {
+            if (hasReceivedSnapshot) listener.onPresenceChanged(filteredUsers())
+            return
+        }
 
         presenceRef = database.child("presence")
         val newPresenceListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 lastRawUsers = parsePresenceSnapshot(snapshot)
+                hasReceivedSnapshot = true
                 Log.d(
                     LOG_TAG,
                     "presence snapshot children=${snapshot.childrenCount}, parsed=${lastRawUsers.size}"
@@ -100,8 +107,19 @@ object PresenceRepository {
         refreshHandler.postDelayed(staleRefreshRunnable, STALE_REFRESH_MS)
     }
 
-    fun stopListening() {
-        activeListener = null
+    fun stopListening(owner: Any) {
+        subscribers.remove(owner)
+        if (subscribers.isNotEmpty()) return
+
+        detachListeners()
+    }
+
+    private fun stopAll() {
+        subscribers.clear()
+        detachListeners()
+    }
+
+    private fun detachListeners() {
         refreshHandler.removeCallbacks(staleRefreshRunnable)
 
         presenceListener?.let { presenceRef?.removeEventListener(it) }
@@ -112,6 +130,7 @@ object PresenceRepository {
         serverTimeOffsetRef = null
         serverTimeOffsetListener = null
         lastRawUsers = emptyList()
+        hasReceivedSnapshot = false
     }
 
     fun publish(detectedLab: String, rssi: Map<String, Int>, distances: Map<String, Double>) {
@@ -146,7 +165,7 @@ object PresenceRepository {
 
     fun clear(onDone: () -> Unit = {}) {
         Log.d(LOG_TAG, "clear called")
-        stopListening()
+        stopAll()
 
         val currentUser = auth.currentUser
         if (currentUser == null) {
@@ -179,19 +198,26 @@ object PresenceRepository {
     }
 
     private fun emitFilteredUsers() {
-        val listener = activeListener ?: return
-        val currentTime = System.currentTimeMillis() + serverTimeOffsetMs
-        val filtered = lastRawUsers.filter { currentTime - it.timestamp <= STALE_TIMEOUT_MS }
-            .sortedWith(compareBy<PresenceUser> { if (it.isSelf) 0 else 1 }
-                .thenBy { it.name.lowercase() })
+        if (subscribers.isEmpty()) return
+        val filtered = filteredUsers()
         Log.d(LOG_TAG, "emitFilteredUsers raw=${lastRawUsers.size}, filtered=${filtered.size}")
+        val currentTime = System.currentTimeMillis() + serverTimeOffsetMs
         lastRawUsers.forEach { user ->
             Log.d(
                 LOG_TAG,
                 "raw user uid=${user.uid}, detectedLab=${user.detectedLab}, timestamp=${user.timestamp}, ageMs=${currentTime - user.timestamp}"
             )
         }
-        listener.onPresenceChanged(filtered)
+        subscribers.values.toList().forEach { listener ->
+            listener.onPresenceChanged(filtered)
+        }
+    }
+
+    private fun filteredUsers(): List<PresenceUser> {
+        val currentTime = System.currentTimeMillis() + serverTimeOffsetMs
+        return lastRawUsers.filter { currentTime - it.timestamp <= STALE_TIMEOUT_MS }
+            .sortedWith(compareBy<PresenceUser> { if (it.isSelf) 0 else 1 }
+                .thenBy { it.name.lowercase() })
     }
 
     private fun parsePresenceSnapshot(snapshot: DataSnapshot): List<PresenceUser> {

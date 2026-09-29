@@ -5,6 +5,8 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -15,8 +17,17 @@ class MapActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
     private var wifiReceiver: BroadcastReceiver? = null
+    private var receiverRegistered = false
     private var localSelfMarker: MapView.UserMarker? = null
     private var presenceMarkers: List<MapView.UserMarker>? = null
+    private val scanHandler = Handler(Looper.getMainLooper())
+    private val scanRunnable = object : Runnable {
+        override fun run() {
+            if (!receiverRegistered) return
+            startScan()
+            scanHandler.postDelayed(this, SCAN_INTERVAL_MS)
+        }
+    }
 
     private lateinit var mapView: MapView
     private lateinit var mapDetectedLab: TextView
@@ -42,18 +53,26 @@ class MapActivity : AppCompatActivity() {
             updateDisplayedUsers()
         }
 
-        // Then start live scanning on this screen too
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            startScan()
-        }
+    }
 
-        PresenceRepository.startListening { users ->
+    override fun onStart() {
+        super.onStart()
+
+        PresenceRepository.startListening(this) { users ->
             presenceMarkers = users.map { user ->
                 MapView.UserMarker(user.name, user.distances, user.isSelf)
             }
             updateDisplayedUsers()
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            ensureWifiReceiver()
+            registerWifiReceiver()
+            scanHandler.removeCallbacks(scanRunnable)
+            scanHandler.post(scanRunnable)
         }
     }
 
@@ -74,9 +93,8 @@ class MapActivity : AppCompatActivity() {
         mapView.updateUsers(listOfNotNull(selfMarker) + otherUsers)
     }
 
-    private fun startScan() {
-        wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-
+    private fun ensureWifiReceiver() {
+        if (wifiReceiver != null) return
         wifiReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
 
@@ -86,7 +104,7 @@ class MapActivity : AppCompatActivity() {
                 var r1 = -100; var r2 = -100; var r3 = -100; var r4 = -100
 
                 for (r in results) {
-                    val bssid = r.BSSID.uppercase()
+                    val bssid = r.BSSID?.uppercase() ?: continue
                     when (RouterConfig.routerMap[bssid]) {
                         "LAB 1" -> r1 = maxOf(r1, r.level)
                         "LAB 2" -> r2 = maxOf(r2, r.level)
@@ -124,28 +142,43 @@ class MapActivity : AppCompatActivity() {
                     "LAB 4" to r4
                 )
                 PresenceRepository.publish(best?.first ?: "Unknown", rssiMap, distances)
-
-                @Suppress("DEPRECATION")
-                wifiManager.startScan()
             }
         }
+    }
 
-        registerReceiver(wifiReceiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
+    private fun registerWifiReceiver() {
+        val receiver = wifiReceiver ?: return
+        if (receiverRegistered) return
 
+        registerReceiver(receiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
+        receiverRegistered = true
+    }
+
+    private fun unregisterWifiReceiver() {
+        val receiver = wifiReceiver ?: return
+        if (!receiverRegistered) return
+
+        try {
+            unregisterReceiver(receiver)
+        } catch (_: Exception) {
+        } finally {
+            receiverRegistered = false
+        }
+    }
+
+    private fun startScan() {
         @Suppress("DEPRECATION")
         wifiManager.startScan()
     }
 
     override fun onStop() {
-        PresenceRepository.stopListening()
+        PresenceRepository.stopListening(this)
+        scanHandler.removeCallbacks(scanRunnable)
+        unregisterWifiReceiver()
         super.onStop()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        wifiReceiver?.let {
-            try { unregisterReceiver(it) } catch (_: Exception) {}
-            wifiReceiver = null
-        }
+    companion object {
+        private const val SCAN_INTERVAL_MS = 25_000L
     }
 }

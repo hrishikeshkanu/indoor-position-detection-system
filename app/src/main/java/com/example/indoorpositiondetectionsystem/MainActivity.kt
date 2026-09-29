@@ -157,13 +157,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        PresenceRepository.startListening { users ->
+        PresenceRepository.startListening(this) { users ->
             renderActiveUsers(users)
         }
     }
 
     override fun onStop() {
-        PresenceRepository.stopListening()
+        PresenceRepository.stopListening(this)
         super.onStop()
     }
 
@@ -275,7 +275,7 @@ class MainActivity : AppCompatActivity() {
                 var r1 = -100; var r2 = -100; var r3 = -100; var r4 = -100
 
                 for (r in results) {
-                    val bssid = r.BSSID.uppercase()
+                    val bssid = r.BSSID?.uppercase() ?: continue
                     when (RouterConfig.routerMap[bssid]) {
                         "LAB 1" -> r1 = maxOf(r1, r.level)
                         "LAB 2" -> r2 = maxOf(r2, r.level)
