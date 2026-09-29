@@ -27,7 +27,16 @@ The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{
 
 ## Router Configuration
 
-The BSSID-to-room mapping is defined only in `RouterConfig.kt`, in `routerMap`. To use this app in another building, replace those BSSIDs with the access point BSSIDs for LAB 1 through LAB 4. Enter addresses in the usual colon-separated form; the app normalizes scanned BSSIDs to uppercase before lookup.
+The BSSID-to-room mapping is defined only in `RouterConfig.kt`, in `routerMap`. The configured access points are:
+
+| Lab | BSSID |
+|---|---|
+| LAB 1 | `54:AF:97:28:6B:79` |
+| LAB 2 | `54:AF:97:92:94:37` |
+| LAB 3 | `40:3F:8C:E0:72:37` |
+| LAB 4 | `40:3F:8C:E0:72:36` |
+
+To use this app in another building, replace those BSSIDs with the access point BSSIDs for your four labs. Enter addresses in the usual colon-separated form; the app normalizes scanned BSSIDs to uppercase before lookup.
 
 ## Distance Formula
 
