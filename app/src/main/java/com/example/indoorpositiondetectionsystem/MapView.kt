@@ -4,6 +4,9 @@ import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
 import android.view.View
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
@@ -47,6 +50,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     }
     private val paintOtherDeviceGlow = Paint().apply {
         color = Color.argb(70, 255, 110, 199); style = Paint.Style.FILL
+    }
+    private val paintSelfRing = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#EAF4F7"); strokeWidth = 3f; style = Paint.Style.STROKE
     }
     private val paintRouterLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#00E5FF"); textSize = 34f
@@ -122,13 +128,19 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     }
 
     private fun estimatePosition(distances: Map<String, Double>): PointF? {
-        if (routers.size < 2 || distances.isEmpty()) return null
         val sorted = distances.entries
             .filter { routers.containsKey(it.key) && it.value < 90.0 }
             .sortedBy { it.value }
-        if (sorted.size < 2) return null
+        if (sorted.isEmpty()) return null
 
         val primaryPt   = routers[sorted[0].key] ?: return null
+        if (sorted.size == 1) {
+            val center = PointF(width / 2f, height / 2f)
+            val offset = (sorted[0].value.toFloat() * mapScale).coerceAtMost(zoneRadius - 30f)
+            val dir = unitVector(primaryPt, center)
+            return PointF(primaryPt.x + dir.x * offset, primaryPt.y + dir.y * offset)
+        }
+
         val secondaryPt = routers[sorted[1].key] ?: return null
         val rawOffset   = sorted[0].value.toFloat() * mapScale
         val offset      = rawOffset.coerceAtMost(zoneRadius - 30f)
@@ -165,9 +177,57 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             canvas.drawText(distText, point.x, distY, paintDistLabel)
         }
 
+        data class EstimatedMarker(val marker: UserMarker, val truePos: PointF?)
+        val estimated = userMarkers.map { EstimatedMarker(it, estimatePosition(it.distances)) }
+        val adjustedPositions = estimated.map { it.truePos?.let(::copyPoint) }.toMutableList()
+        val positionedIndices = estimated.indices.filter { estimated[it].truePos != null }
+        val ungrouped = positionedIndices.toMutableSet()
+
+        while (ungrouped.isNotEmpty()) {
+            val group = mutableListOf(ungrouped.first())
+            ungrouped.remove(group.first())
+            var index = 0
+            while (index < group.size) {
+                val current = estimated[group[index]].truePos!!
+                val nearby = ungrouped.filter { candidate ->
+                    pixelDist(current, estimated[candidate].truePos!!) < 60f
+                }
+                group.addAll(nearby)
+                ungrouped.removeAll(nearby.toSet())
+                index++
+            }
+
+            if (group.size > 1) {
+                val selfIndex = group.firstOrNull { estimated[it].marker.isSelf }
+                val anchor = selfIndex?.let { estimated[it].truePos!! } ?: PointF(
+                    group.map { estimated[it].truePos!!.x }.average().toFloat(),
+                    group.map { estimated[it].truePos!!.y }.average().toFloat()
+                )
+                val circleIndices = group.filter { it != selfIndex }
+                val angleStep = 2.0 * PI / circleIndices.size
+                circleIndices.forEachIndexed { circleIndex, markerIndex ->
+                    val angle = -PI / 2.0 + angleStep * circleIndex
+                    adjustedPositions[markerIndex] = PointF(
+                        anchor.x + cos(angle).toFloat() * 50f,
+                        anchor.y + sin(angle).toFloat() * 50f
+                    )
+                }
+            }
+        }
+
+        val outOfRangeCount = adjustedPositions.count { it == null }
+        adjustedPositions.indices.forEach { index ->
+            adjustedPositions[index]?.let { position ->
+                position.x = position.x.coerceIn(30f, (w - 30f).coerceAtLeast(30f))
+                position.y = position.y.coerceIn(30f, (h - 30f).coerceAtLeast(30f))
+            }
+        }
+
         val drawnLabelPoints = mutableListOf<PointF>()
-        for (marker in userMarkers) {
-            val pos = estimatePosition(marker.distances) ?: continue
+        val drawOrder = estimated.indices.sortedBy { estimated[it].marker.isSelf }
+        for (markerIndex in drawOrder) {
+            val marker = estimated[markerIndex].marker
+            val pos = adjustedPositions[markerIndex] ?: continue
             val glowPaint = if (marker.isSelf) paintDeviceGlow else paintOtherDeviceGlow
             val fillPaint = if (marker.isSelf) paintDeviceFill else paintOtherDeviceFill
             val labelPaint = if (marker.isSelf) paintDeviceLabel else paintOtherDeviceLabel
@@ -176,13 +236,28 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
             canvas.drawCircle(pos.x, pos.y, glowRadius, glowPaint)
             canvas.drawCircle(pos.x, pos.y, dotRadius, fillPaint)
+            if (marker.isSelf) canvas.drawCircle(pos.x, pos.y, dotRadius + 2f, paintSelfRing)
 
-            var labelPt = youLabelOffset(pos)
-            if (drawnLabelPoints.any { pixelDist(it, labelPt) < 40f }) {
-                labelPt = PointF(labelPt.x, labelPt.y + 24f)
+            val initialLabelPt = youLabelOffset(pos)
+            val labelCandidates = listOf(0f, 24f, -24f, 48f).map { offset ->
+                PointF(
+                    initialLabelPt.x.coerceIn(30f, (w - 30f).coerceAtLeast(30f)),
+                    (initialLabelPt.y + offset).coerceIn(30f, (h - 30f).coerceAtLeast(30f))
+                )
             }
+            val labelPt = labelCandidates.firstOrNull { candidate ->
+                drawnLabelPoints.none { pixelDist(it, candidate) < 40f }
+            } ?: continue
             drawnLabelPoints.add(labelPt)
             canvas.drawText(marker.name, labelPt.x, labelPt.y, labelPaint)
         }
+
+        if (outOfRangeCount > 0) {
+            val caption = if (outOfRangeCount == 1) "1 user out of range"
+                else "$outOfRangeCount users out of range"
+            canvas.drawText(caption, w / 2f, (h - 16f).coerceAtLeast(24f), paintDistLabel)
+        }
     }
+
+    private fun copyPoint(point: PointF): PointF = PointF(point.x, point.y)
 }
