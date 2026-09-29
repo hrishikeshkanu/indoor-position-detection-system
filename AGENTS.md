@@ -3,7 +3,7 @@
 ## Project overview
 Android app (Kotlin, Android Views, custom Canvas drawing) for indoor position detection using WiFi RSSI. The app scans nearby access points, compares signal strengths, and estimates the user's room/position in a lab environment (routers mapped to LAB 1–LAB 4). Firebase Authentication gates the dashboard, and Firebase Realtime Database stores scan data.
 
-Current state: login/registration and database connectivity are working. The project is now adding a **multi-user presence feature** (see "Feature in progress" below).
+Current state: login/registration, database connectivity, and the multi-user presence feature are working.
 
 ## Repository structure
 - `app/` – Android app module
@@ -47,17 +47,18 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 ```
 - `presence/{uid}` is OVERWRITTEN with `setValue` (never `push`), removed via `onDisconnect().removeValue()` and on logout.
 - Username source of truth: `users/{uid}/name`; fallback is email prefix, then `"User"`.
-- Target rules: authenticated read; a user may write only their own `presence/{uid}` and `users/{uid}`.
+- Target rules: authenticated read is granted at the `presence` parent; a user may write only their own `presence/{uid}` and `users/{uid}`.
 
-## Feature in progress: multi-user presence
+## Multi-user presence
 Stages (implement one at a time, don't skip ahead):
 1. **Write layer** – `PresenceRepository.publish()/clear()`; called after each scan in `MainActivity` and `MapActivity`; `clear()` before `signOut()`. ✅
 2. **Read layer** – ValueEventListener on `presence`, exposes list of active users, filters stale entries (based on `timestamp`), excludes/flags self. ✅
 3. **Main page** – "ACTIVE USERS" card: username + lab per user. ✅
-4. **Map view** – draw other users' dots with name labels using the same estimation math as "YOU"; use a distinct color from the green "YOU" dot; avoid label overlap. ✅
-5. **Polish** – tighten DB rules, tune stale timeout, update README and this file. ✅
+4. **Map view** – draw other users' dots with name labels using the same estimation math as "YOU"; spread overlaps into rings and provide single-router fallback placement. ✅
+5. **Shared subscriptions** – support owner-keyed multiple subscribers and stop each activity's subscription in its matching lifecycle callback. ✅
+6. **Polish** – tighten DB rules, tune stale timeout, and document the rules, map behavior, and capacity. ✅
 
-Multi-user presence feature complete as of Stage 5.
+Multi-user presence feature complete as of Stage 6.
 
 ## Invariants (do not break)
 - BSSID map lives only in `RouterConfig.kt`; never redeclare it in activities.
@@ -67,12 +68,13 @@ Multi-user presence feature complete as of Stage 5.
 - Preserve runtime permission checks and the room names `LAB 1`–`LAB 4`.
 - No new secrets/credentials in source. Do not add new architecture libraries.
 - Firebase writes are async; never assume completion. Don't Toast on every-scan failures (log with `Log.w`).
+- Presence `.read` permission must be granted at the `presence` parent because activities listen on that node.
+- `PresenceRepository` uses owner-keyed subscribers through `startListening(owner, ...)` and `stopListening(owner)`.
+- Every activity that listens must stop its subscription in the matching lifecycle callback.
 - Keep the dark theme with cyan (`#00E5FF`) and green (`#00FF9C`) accents.
 - Only one activity may hold `LAUNCHER`; check for duplicate/dead manifest entries before adding new ones.
 
 ## Known issues / tech debt (fix only when relevant to the task, or when asked)
-- `MapActivity` calls `startScan()` inside every receiver callback (self-triggering loop); Android throttles scans (~4 per 2 min on API 28+).
-- `r.BSSID` is used without null-safety; guard when touching scan loops.
 - `scans` grows unbounded (one push per scan per user); consider retention/cleanup later.
 - Manifest theme is hard-coded `Theme.AppCompat.Light.NoActionBar` instead of the app theme.
 - `google-services.json` contains an API key (normal for Firebase); restrict it in the Google Cloud console and rely on DB rules for protection.

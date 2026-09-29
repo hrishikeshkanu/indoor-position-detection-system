@@ -17,13 +17,15 @@ An Android application that estimates a user's indoor room from WiFi RSSI (Recei
 
 The app scans nearby WiFi access points and compares each mapped router's RSSI. The strongest signal identifies the detected lab. The floor map estimates a position within that lab using the nearest routers and the distance model below; accuracy is intended to be room-level.
 
-The dashboard and map refresh WiFi scans, with a 25-second dashboard auto-refresh and a manual refresh control. Detection statistics report the time from a scan request to its results.
+The dashboard and map refresh WiFi scans every 25 seconds, with a manual dashboard refresh control. Detection statistics report the time from a scan request to its results.
 
 ## Authentication and Presence
 
 Firebase Authentication with email and password provides Login and Register screens and gates access to the dashboard. Firebase Realtime Database stores scan records under `scans/{pushId}`.
 
-The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{uid}`. Presence is overwritten on each scan and removed on disconnect or logout. The current user is shown with a green marker; other active users are pink. Entries older than 90 seconds are treated as stale.
+The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{uid}`. Presence is overwritten on each scan and removed on disconnect or logout. `PresenceRepository` shares one Firebase presence listener across multiple owner-keyed subscribers and distributes filtered updates to each subscriber. Each listening activity starts and stops its subscription with its lifecycle. The current user is shown with a green marker; other active users are pink. Entries older than 90 seconds are treated as stale.
+
+The map spreads overlapping markers into concentric rings around their estimated shared position. With only one usable router, a marker is placed from that router toward the map center. The caption reports `N on map` and, when applicable, `M out of range`.
 
 ## Router Configuration
 
@@ -88,8 +90,8 @@ When a router is not detected (`RSSI = -100`), the app uses a distance sentinel 
                  }
              },
              "presence": {
+                 ".read": "auth != null",
                  "$uid": {
-                     ".read": "auth != null",
                      ".write": "auth != null && auth.uid == $uid",
                      ".validate": "newData.hasChildren(['uid', 'name', 'detectedLab', 'timestamp']) && newData.child('uid').val() == $uid && newData.child('name').isString() && newData.child('detectedLab').isString() && newData.child('timestamp').isNumber()"
                  }
@@ -97,6 +99,8 @@ When a router is not detected (`RSSI = -100`), the app uses a distance sentinel 
          }
      }
      ```
+
+    Firebase read rules do not cascade upward, so listening on the `presence` parent requires read access on that parent.
 
 4. Replace the sample router BSSIDs in `RouterConfig.kt` with the real BSSIDs for your four lab access points.
 
@@ -117,12 +121,17 @@ The app declares these permissions:
 
 Location permission is requested at runtime because Android requires it for WiFi scan results. Firebase Authentication and Realtime Database also require an internet connection.
 
+## Capacity
+
+There is no hard user limit enforced by the app. Firebase's free plan is limited by simultaneous database connections (about 100) and download quota. Because each user's presence updates are delivered to the other listeners, bandwidth grows roughly with the square of the number of users.
+
 ## Known Limitations
 
 - Android scan throttling limits `startScan()` to roughly four calls per two minutes per app on Android 9 and newer. The OS controls this limit.
 - On Android 10 and newer, the device Location toggle must be ON for WiFi scanning to return results; granting app permission alone may not be enough.
 - RSSI fluctuates with walls, furniture, people, and radio interference. The result targets room-level, not precise coordinate, accuracy.
 - The path-loss model is approximate and real environments can differ from its assumptions.
+- Presence capacity depends on Firebase's simultaneous-connection and download quotas; see [Capacity](#capacity). Marker spreading improves readability when estimates overlap but does not make those estimates more precise.
 
 ## Project Structure
 
