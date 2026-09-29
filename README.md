@@ -1,6 +1,6 @@
 #  Indoor Position Detection System
 
-An Android application that estimates a user's indoor room from WiFi RSSI (Received Signal Strength Indicator) readings from access points mapped to LAB 1–LAB 4. It provides room-level positioning rather than precise coordinates.
+An Android application that estimates a user's indoor room from WiFi RSSI (Received Signal Strength Indicator) readings from access points mapped to LAB 1–LAB 4. It provides room-level positioning rather than precise coordinates, and shows other signed-in users live on the same floor map.
 
 ---
 
@@ -17,15 +17,24 @@ An Android application that estimates a user's indoor room from WiFi RSSI (Recei
 
 The app scans nearby WiFi access points and compares each mapped router's RSSI. The strongest signal identifies the detected lab. The floor map estimates a position within that lab using the nearest routers and the distance model below; accuracy is intended to be room-level.
 
-The dashboard and map refresh WiFi scans every 25 seconds, with a manual dashboard refresh control. Detection statistics report the time from a scan request to its results.
+The dashboard and map each refresh WiFi scans every 25 seconds while visible. The dashboard also has a manual refresh control. Detection statistics report the time from a scan request to its results.
 
 ## Authentication and Presence
 
 Firebase Authentication with email and password provides Login and Register screens and gates access to the dashboard. Firebase Realtime Database stores scan records under `scans/{pushId}`.
 
-The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{uid}`. Presence is overwritten on each scan and removed on disconnect or logout. `PresenceRepository` shares one Firebase presence listener across multiple owner-keyed subscribers and distributes filtered updates to each subscriber. Each listening activity starts and stops its subscription with its lifecycle. The current user is shown with a green marker; other active users are pink. Entries older than 90 seconds are treated as stale.
+The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{uid}`. Presence is overwritten on each scan and removed on disconnect or logout. The current user is shown with a green marker (with a white ring, always drawn on top); other active users are pink. Entries older than 90 seconds are treated as stale.
 
-The map spreads overlapping markers into concentric rings around their estimated shared position. With only one usable router, a marker is placed from that router toward the map center. The caption reports `N on map` and, when applicable, `M out of range`.
+`PresenceRepository` supports multiple subscribers. Each screen registers itself as an owner (`startListening(owner, ...)` / `stopListening(owner)`), so the dashboard and the map can listen at the same time. The underlying Firebase listeners attach when the first subscriber joins and detach when the last one leaves. A screen that subscribes late immediately receives the latest known list.
+
+## Floor Map Behavior
+
+- **Normal placement:** with two or more detected routers, the dot is placed from the nearest router toward the second nearest.
+- **Single-router fallback:** if only one router is detected, the dot is placed near that router, offset toward the map center by the estimated distance.
+- **Out of range:** if no router is detected, the user cannot be placed. The caption at the bottom of the map reads **"N on map"**, plus **", M out of range"** when M > 0.
+- **Overlap spreading:** users whose positions fall within 60 px of each other are spread on concentric rings around the group's anchor (your own dot, or the group centre). Ring 1 has radius 50 px and each further ring adds 45 px, so 15 or more users in one spot stay visible. Order is deterministic (by name), so dots do not shuffle between updates.
+- **Crowd scaling:** with more than 12 users on the map, other users' dots and labels shrink, and long names are shortened.
+- **Labels** avoid each other and stay inside the view.
 
 ## Router Configuration
 
@@ -100,11 +109,17 @@ When a router is not detected (`RSSI = -100`), the app uses a distance sentinel 
      }
      ```
 
-    Firebase read rules do not cascade upward, so listening on the `presence` parent requires read access on that parent.
+     > **Important:** Firebase read rules do not cascade upward. The app listens on the whole `presence` node, so `.read` must be set on `presence` itself, not only under `$uid`. Otherwise the listener is rejected with `Permission denied` and every device sees "0 online".
 
 4. Replace the sample router BSSIDs in `RouterConfig.kt` with the real BSSIDs for your four lab access points.
 
 5. Connect an Android device, enable USB debugging, and run the `app` configuration from Android Studio. The minimum supported Android version is API 24.
+
+## Testing With Multiple Devices
+
+1. Install the app on two or more devices and sign in with a different account on each.
+2. Open the dashboard on each device. **ACTIVE USERS** should list every signed-in user, and tapping **VIEW MAP** should show them as green (you) and pink (others) markers.
+3. To simulate a crowd without many phones, import test entries into `presence` from the Firebase console (Data tab → `presence` → Import JSON) with a far-future `timestamp`. **Delete these test entries afterwards**, because they never go stale.
 
 ## Required Permissions
 
@@ -123,25 +138,34 @@ Location permission is requested at runtime because Android requires it for WiFi
 
 ## Capacity
 
-There is no hard user limit enforced by the app. Firebase's free plan is limited by simultaneous database connections (about 100) and download quota. Because each user's presence updates are delivered to the other listeners, bandwidth grows roughly with the square of the number of users.
+The app code has no hard limit on the number of users: the dashboard lists, and the map draws, every presence entry newer than 90 seconds. Practical limits come from Firebase:
+
+| Limit | Value (free Spark plan) | Effect |
+|---|---|---|
+| Simultaneous connections | About 100 | Roughly 100 devices online at once |
+| Download quota | 10 GB / month | Bandwidth grows roughly with the square of the user count, since every write is sent to every listener |
+
+As a rough guide at one write per 25 s per user: about 20 users use ~23 MB/hour, 50 users ~145 MB/hour, and 100 users ~575 MB/hour. Check the Firebase console's Usage tab, as plan limits can change. 15+ simultaneous users work comfortably; 30–50 is fine for demos.
 
 ## Known Limitations
 
-- Android scan throttling limits `startScan()` to roughly four calls per two minutes per app on Android 9 and newer. The OS controls this limit.
+- Android scan throttling limits `startScan()` to roughly four calls per two minutes per app on Android 9 and newer. The OS controls this limit, and the 25-second interval is slightly above it, so some results may come from the OS cache.
 - On Android 10 and newer, the device Location toggle must be ON for WiFi scanning to return results; granting app permission alone may not be enough.
 - RSSI fluctuates with walls, furniture, people, and radio interference. The result targets room-level, not precise coordinate, accuracy.
 - The path-loss model is approximate and real environments can differ from its assumptions.
-- Presence capacity depends on Firebase's simultaneous-connection and download quotas; see [Capacity](#capacity). Marker spreading improves readability when estimates overlap but does not make those estimates more precise.
+- Overlap spreading moves dots away from their true estimate so that everyone stays visible; spread positions are approximate.
+- The `scans` node grows with every scan and has no automatic cleanup.
+- Free-plan Firebase limits (connections and bandwidth) apply; see **Capacity**.
 
 ## Project Structure
 
 | File | Purpose |
 |---|---|
 | `LoginActivity.kt`, `RegisterActivity.kt` | Firebase email/password authentication |
-| `MainActivity.kt` | Dashboard, scan lifecycle, auto-refresh, and detection statistics |
-| `MapActivity.kt`, `MapView.kt` | Live map scanning and Canvas rendering of router and user markers |
+| `MainActivity.kt` | Dashboard, scan lifecycle, 25 s auto-refresh, detection statistics, ACTIVE USERS list |
+| `MapActivity.kt`, `MapView.kt` | Live map scanning (25 s interval) and Canvas rendering of routers and user markers |
 | `RouterConfig.kt` | Single BSSID-to-room mapping and shared distance calculation |
-| `PresenceRepository.kt` | Publish, listen for, and filter live presence |
+| `PresenceRepository.kt` | Multi-subscriber publish, listen, and stale filtering of live presence |
 | `SignalGraphView.kt` | Dashboard RSSI graph |
 
 ## Signal Quality Reference
