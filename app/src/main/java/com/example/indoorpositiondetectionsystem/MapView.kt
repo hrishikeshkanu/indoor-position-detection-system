@@ -49,7 +49,17 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         strokeWidth = 3f
     }
     private val paintDotOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE; strokeWidth = 4f
+        color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE; strokeWidth = 5f
+    }
+    private val paintCaptionPill = Paint().apply {
+        color = Color.argb(170, 10, 22, 37); style = Paint.Style.FILL
+    }
+    private val paintLegendPill = Paint().apply {
+        color = Color.argb(170, 10, 22, 37); style = Paint.Style.FILL
+    }
+    private val paintLegendText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#E6F7FF"); textSize = 20f
+        textAlign = Paint.Align.LEFT
     }
     private val paintLabelHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE
@@ -90,11 +100,15 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         color = Color.parseColor("#EAF4F7"); strokeWidth = 3f; style = Paint.Style.STROKE
     }
     private val paintRouterLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00E5FF"); textSize = 28f
+        color = Color.parseColor("#00E5FF"); textSize = 22f
         textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
     }
     private val paintDistLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#88AABBCC"); textSize = 24f; textAlign = Paint.Align.CENTER
+    }
+    private val paintDistValue = Paint(paintDistLabel).apply {
+        color = Color.parseColor("#E6F7FF"); textSize = 24f
+        textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
     }
     private val paintDeviceLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#00FF9C"); textSize = 28f
@@ -267,18 +281,24 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         }
 
         for ((lab, point) in routers) {
-            canvas.drawCircle(point.x, point.y, 40f, paintRouterGlow)
-            canvas.drawCircle(point.x, point.y, 18f, paintRouterFill)
+            canvas.drawCircle(point.x, point.y, 24f, paintRouterGlow)
+            paintDotOutline.strokeWidth = 4f
+            canvas.drawCircle(point.x, point.y, 10f, paintDotOutline)
+            paintDotOutline.strokeWidth = 5f
+            canvas.drawCircle(point.x, point.y, 9f, paintRouterFill)
             val labelMinY = (mapRect.top + 30f).coerceAtMost(mapRect.centerY())
             val labelMaxY = (mapRect.bottom - 30f).coerceAtLeast(mapRect.centerY())
             val nameY = routerLabelY(point, referencePos).coerceIn(labelMinY, labelMaxY)
-            drawHaloText(canvas, lab, point.x, nameY, paintRouterLabel)
+            val routerLabel = "AP ${lab.substringAfter("LAB ")}"
+            drawHaloText(canvas, routerLabel, point.x, nameY, paintRouterLabel)
             val distText = referenceMarker?.distances?.get(lab)
                 ?.let { if (it < 90.0) "${"%.1f".format(it)} m" else "–" } ?: "–"
             val distY = (if (nameY < point.y) point.y + 52f else point.y - 40f)
                 .coerceIn(labelMinY, labelMaxY)
-            drawHaloText(canvas, distText, point.x, distY, paintDistLabel)
+            drawHaloText(canvas, distText, point.x, distY, paintDistValue)
         }
+
+        drawLegend(canvas)
 
         data class EstimatedMarker(val marker: UserMarker, val truePos: PointF?)
         val estimated = userMarkers.map { EstimatedMarker(it, estimatePosition(it.distances)) }
@@ -394,7 +414,43 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
         val caption = "$placedCount on map" +
             if (outOfRangeCount > 0) ", $outOfRangeCount out of range" else ""
-        drawHaloText(canvas, caption, mapRect.centerX(), mapRect.bottom - 16f, paintDistLabel)
+        val captionWidth = paintDistValue.measureText(caption) + 24f
+        val captionBottom = mapRect.bottom - 8f
+        val captionRect = RectF(
+            mapRect.centerX() - captionWidth / 2f,
+            captionBottom - 36f,
+            mapRect.centerX() + captionWidth / 2f,
+            captionBottom
+        )
+        canvas.drawRoundRect(captionRect, 14f, 14f, paintCaptionPill)
+        val captionMetrics = paintDistValue.fontMetrics
+        val captionBaseline = captionRect.centerY() - (captionMetrics.ascent + captionMetrics.descent) / 2f
+        canvas.drawText(caption, mapRect.centerX(), captionBaseline, paintDistValue)
+    }
+
+    private fun drawLegend(canvas: Canvas) {
+        if (mapRect.width() < 400f) return
+
+        val rows = listOf(
+            "You" to paintDeviceFill,
+            "Others" to paintOtherDeviceFill,
+            "Router (AP)" to paintRouterFill
+        )
+        val textWidth = rows.maxOf { paintLegendText.measureText(it.first) }
+        val left = mapRect.left + 12f
+        val top = mapRect.top + 12f
+        val legendWidth = textWidth + 48f
+        val legendHeight = 3 * 26f + 16f
+        val legendRect = RectF(left, top, left + legendWidth, top + legendHeight)
+        canvas.drawRoundRect(legendRect, 12f, 12f, paintLegendPill)
+
+        val metrics = paintLegendText.fontMetrics
+        rows.forEachIndexed { index, (label, dotPaint) ->
+            val centerY = top + 8f + 13f + index * 26f
+            canvas.drawCircle(left + 18f, centerY, 6f, dotPaint)
+            val baseline = centerY - (metrics.ascent + metrics.descent) / 2f
+            canvas.drawText(label, left + 34f, baseline, paintLegendText)
+        }
     }
 
     private fun drawHaloText(canvas: Canvas, text: String, x: Float, y: Float, paint: Paint) {

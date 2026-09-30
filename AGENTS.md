@@ -157,5 +157,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - Labels use a dark halo and dots a dark outline for readability.
 - Markers and marker labels are clamped to `mapRect` with a 30 px inset.
 - The detected lab (reference marker's smallest distance < 90) gets a translucent green highlight. Lab rectangles as fractions of `mapRect`: LAB 1 (0.03, 0.03, 0.45, 0.44), LAB 2 (0.55, 0.03, 0.97, 0.44), LAB 3 (0.03, 0.56, 0.45, 0.97), LAB 4 (0.55, 0.56, 0.97, 0.97).
-- Router names use 28f; distance labels are drawn on the opposite side of the dot from the name; marker label offset radius is 44f with a 90f near-router threshold.
-- Stages 1–3 (background, routers/scale to `mapRect`, clamping and lab highlight) are done; Stage 4 (polish/docs) remains.
+- Router AP markers use a 9 px dot, 24 px glow, and `AP n` labels; distance values use a bold light paint and sit opposite the router name.
+- The map caption uses a dark pill, and a top-left legend identifies you, other users, and routers on maps at least 400 px wide.
+- Marker label offset radius is 44f with a 90f near-router threshold.
+- All four stages are complete. Tunables: `MAP_WIDTH_METERS` (20f), router fractions (0.25/0.75), `zoneRadius` fraction (0.22), and lab rectangle fractions listed above.

@@ -34,7 +34,11 @@ The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{
 - **Out of range:** if no router is detected, the user cannot be placed. The caption at the bottom of the map reads **"N on map"**, plus **", M out of range"** when M > 0.
 - **Overlap spreading:** users whose positions fall within 60 px of each other are spread on concentric rings around the group's anchor (your own dot, or the group centre). Ring 1 has radius 50 px and each further ring adds 45 px, so 15 or more users in one spot stay visible. Order is deterministic (by name), so dots do not shuffle between updates.
 - **Crowd scaling:** with more than 12 users on the map, other users' dots and labels shrink, and long names are shortened.
-- **Labels** avoid each other and stay inside the view.
+- **Labels** avoid each other and stay inside the floor-plan area.
+
+## Floor Map Image
+
+The map uses `app/src/main/res/drawable-nodpi/floor_map.jpeg` as a square background, with a detected-lab highlight and a legend for users and routers. To use another building, replace the image, update the router fractions, lab rectangle fractions, and `MAP_WIDTH_METERS` in `MapView.kt`, and update the access-point BSSIDs in `RouterConfig.kt`.
 
 ## Router Configuration
 
