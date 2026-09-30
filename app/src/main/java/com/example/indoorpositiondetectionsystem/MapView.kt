@@ -18,6 +18,12 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         private const val LAB_RIGHT = 0.75f
         private const val LAB_TOP = 0.25f
         private const val LAB_BOTTOM = 0.75f
+        private val LAB_RECT_FRACTIONS = mapOf(
+            "LAB 1" to listOf(0.03f, 0.03f, 0.45f, 0.44f),
+            "LAB 2" to listOf(0.55f, 0.03f, 0.97f, 0.44f),
+            "LAB 3" to listOf(0.03f, 0.56f, 0.45f, 0.97f),
+            "LAB 4" to listOf(0.55f, 0.56f, 0.97f, 0.97f)
+        )
     }
 
     data class UserMarker(
@@ -34,6 +40,13 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val paintFloor = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
     private val paintScrim = Paint().apply {
         color = Color.argb(90, 10, 22, 37); style = Paint.Style.FILL
+    }
+    private val paintLabHighlightFill = Paint().apply {
+        color = Color.argb(38, 0, 255, 156); style = Paint.Style.FILL
+    }
+    private val paintLabHighlightStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(200, 0, 255, 156); style = Paint.Style.STROKE
+        strokeWidth = 3f
     }
     private val paintDotOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE; strokeWidth = 4f
@@ -77,7 +90,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         color = Color.parseColor("#EAF4F7"); strokeWidth = 3f; style = Paint.Style.STROKE
     }
     private val paintRouterLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00E5FF"); textSize = 34f
+        color = Color.parseColor("#00E5FF"); textSize = 28f
         textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
     }
     private val paintDistLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -178,8 +191,8 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             val d = pixelDist(pos, pt)
             if (d < nearestDist) { nearestDist = d; nearestPoint = pt }
         }
-        val labelRadius = 58f
-        return if (nearestDist < 110f) {
+        val labelRadius = 44f
+        return if (nearestDist < 90f) {
             val away = unitVector(nearestPoint, pos)
             PointF(pos.x + away.x * labelRadius, pos.y + away.y * labelRadius)
         } else PointF(pos.x, pos.y - labelRadius)
@@ -235,6 +248,23 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
         val referenceMarker = userMarkers.firstOrNull { it.isSelf } ?: userMarkers.firstOrNull()
         val referencePos = referenceMarker?.let { estimatePosition(it.distances) }
+        if (!mapRect.isEmpty) {
+            val detectedLab = referenceMarker?.distances?.entries
+                ?.filter { it.value < 90.0 && LAB_RECT_FRACTIONS.containsKey(it.key) }
+                ?.minByOrNull { it.value }?.key
+            val fractions = detectedLab?.let { LAB_RECT_FRACTIONS[it] }
+            if (fractions != null) {
+                val side = mapRect.width()
+                val labRect = RectF(
+                    mapRect.left + side * fractions[0],
+                    mapRect.top + side * fractions[1],
+                    mapRect.left + side * fractions[2],
+                    mapRect.top + side * fractions[3]
+                )
+                canvas.drawRoundRect(labRect, 12f, 12f, paintLabHighlightFill)
+                canvas.drawRoundRect(labRect, 12f, 12f, paintLabHighlightStroke)
+            }
+        }
 
         for ((lab, point) in routers) {
             canvas.drawCircle(point.x, point.y, 40f, paintRouterGlow)
@@ -245,7 +275,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             drawHaloText(canvas, lab, point.x, nameY, paintRouterLabel)
             val distText = referenceMarker?.distances?.get(lab)
                 ?.let { if (it < 90.0) "${"%.1f".format(it)} m" else "–" } ?: "–"
-            val distY = (if (nameY < point.y) nameY - 24f else nameY + 30f)
+            val distY = (if (nameY < point.y) point.y + 52f else point.y - 40f)
                 .coerceIn(labelMinY, labelMaxY)
             drawHaloText(canvas, distText, point.x, distY, paintDistLabel)
         }
@@ -305,8 +335,10 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         val isCrowded = placedCount > 12
         adjustedPositions.indices.forEach { index ->
             adjustedPositions[index]?.let { position ->
-                position.x = position.x.coerceIn(30f, (w - 30f).coerceAtLeast(30f))
-                position.y = position.y.coerceIn(30f, (h - 30f).coerceAtLeast(30f))
+                val minX = mapRect.left + 30f
+                val minY = mapRect.top + 30f
+                position.x = position.x.coerceIn(minX, (mapRect.right - 30f).coerceAtLeast(minX))
+                position.y = position.y.coerceIn(minY, (mapRect.bottom - 30f).coerceAtLeast(minY))
             }
         }
 
@@ -332,13 +364,13 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             val initialLabelPt = youLabelOffset(pos)
             val textWidth = labelPaint.measureText(labelText)
             val fontMetrics = labelPaint.fontMetrics
-            val availableWidth = (w - 60f).coerceAtLeast(1f)
+            val availableWidth = (mapRect.width() - 60f).coerceAtLeast(1f)
             val textScale = (availableWidth / textWidth.coerceAtLeast(1f)).coerceAtMost(1f)
             val renderedHalfWidth = textWidth * textScale / 2f
-            val minLabelX = 30f + renderedHalfWidth
-            val maxLabelX = (w - 30f - renderedHalfWidth).coerceAtLeast(minLabelX)
-            val minLabelY = (30f - fontMetrics.top).coerceAtMost(h / 2f)
-            val maxLabelY = (h - 30f - fontMetrics.bottom).coerceAtLeast(minLabelY)
+            val minLabelX = mapRect.left + 30f + renderedHalfWidth
+            val maxLabelX = (mapRect.right - 30f - renderedHalfWidth).coerceAtLeast(minLabelX)
+            val minLabelY = mapRect.top + 30f - fontMetrics.top
+            val maxLabelY = (mapRect.bottom - 30f - fontMetrics.bottom).coerceAtLeast(minLabelY)
             val rawLabelCandidates = listOf(
                 PointF(initialLabelPt.x, initialLabelPt.y - 24f),
                 PointF(initialLabelPt.x, initialLabelPt.y + 24f),

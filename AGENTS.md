@@ -155,4 +155,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - `mapScale = mapRect.width() / 20` (20 m assumed map width); `zoneRadius = 0.22 * mapRect.width()`.
 - Coverage circles are no longer drawn; the grid fallback is square and clipped to `mapRect`.
 - Labels use a dark halo and dots a dark outline for readability.
-- Stage 1 (background) and Stage 2 (routers/scale to `mapRect`) are done; Stage 3 (clamping to `mapRect`, lab highlight) and Stage 4 (polish/docs) remain.
+- Markers and marker labels are clamped to `mapRect` with a 30 px inset.
+- The detected lab (reference marker's smallest distance < 90) gets a translucent green highlight. Lab rectangles as fractions of `mapRect`: LAB 1 (0.03, 0.03, 0.45, 0.44), LAB 2 (0.55, 0.03, 0.97, 0.44), LAB 3 (0.03, 0.56, 0.45, 0.97), LAB 4 (0.55, 0.56, 0.97, 0.97).
+- Router names use 28f; distance labels are drawn on the opposite side of the dot from the name; marker label offset radius is 44f with a 90f near-router threshold.
+- Stages 1–3 (background, routers/scale to `mapRect`, clamping and lab highlight) are done; Stage 4 (polish/docs) remains.
