@@ -31,8 +31,8 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         )
         // Covers the room name printed in the floor image; retune when replacing the image.
         private val IMAGE_ROOM_NAME_COVER_FRACTIONS = mapOf(
-            "LAB 1" to listOf(0.17f, 0.42f, 0.33f, 0.50f),
-            "LAB 2" to listOf(0.67f, 0.42f, 0.83f, 0.50f),
+            "LAB 1" to listOf(0.17f, 0.205f, 0.33f, 0.285f),
+            "LAB 2" to listOf(0.67f, 0.205f, 0.83f, 0.285f),
             "LAB 3" to listOf(0.17f, 0.69f, 0.33f, 0.77f),
             "LAB 4" to listOf(0.67f, 0.69f, 0.83f, 0.77f)
         )

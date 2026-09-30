@@ -158,7 +158,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - Markers and marker labels are clamped to `mapRect` with a 30 px inset.
 - The detected lab (reference marker's smallest distance < 90) gets a translucent green highlight. Lab rectangles as fractions of `mapRect`: LAB 1 (0.03, 0.03, 0.45, 0.44), LAB 2 (0.55, 0.03, 0.97, 0.44), LAB 3 (0.03, 0.56, 0.45, 0.97), LAB 4 (0.55, 0.56, 0.97, 0.97).
 - Router AP markers use a 9 px dot, 24 px glow, and `LAB n` labels; they are drawn at the lab centers (`AP_DRAW_OFFSET_FRACTION = 0f`).
-- The floor image's printed room names are covered by rounded patches controlled by `HIDE_IMAGE_ROOM_NAMES`. Retune the patch table when replacing the floor image.
+- The floor image's printed room names are covered by rounded patches controlled by `HIDE_IMAGE_ROOM_NAMES`. Patch fractions: LAB 1 (0.17, 0.205, 0.33, 0.285), LAB 2 (0.67, 0.205, 0.83, 0.285), LAB 3 (0.17, 0.69, 0.33, 0.77), LAB 4 (0.67, 0.69, 0.83, 0.77). Retune the patch table when replacing the floor image.
 - Distance labels use a bold light paint, are drawn after user markers, and are omitted for missing or unusable distances (`>= 90`). Retune `AP_DRAW_OFFSET_FRACTION` when replacing the floor image.
 - The map caption uses a dark pill, and a top-left legend identifies you, other users, and routers on maps at least 400 px wide.
 - Marker label offset radius is 44f with a 90f near-router threshold.
