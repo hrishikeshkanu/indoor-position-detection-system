@@ -18,6 +18,10 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         private const val LAB_RIGHT = 0.75f
         private const val LAB_TOP = 0.25f
         private const val LAB_BOTTOM = 0.75f
+        // Vertical offset of the drawn AP marker below the logical router point,
+        // as a fraction of mapRect.width(). Tune when the floor image changes so
+        // the AP marker does not cover the image's printed room names.
+        private const val AP_DRAW_OFFSET_FRACTION = 0.07f
         private val LAB_RECT_FRACTIONS = mapOf(
             "LAB 1" to listOf(0.03f, 0.03f, 0.45f, 0.44f),
             "LAB 2" to listOf(0.55f, 0.03f, 0.97f, 0.44f),
@@ -281,21 +285,17 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         }
 
         for ((lab, point) in routers) {
-            canvas.drawCircle(point.x, point.y, 24f, paintRouterGlow)
+            val apY = point.y + mapRect.width() * AP_DRAW_OFFSET_FRACTION
+            canvas.drawCircle(point.x, apY, 24f, paintRouterGlow)
             paintDotOutline.strokeWidth = 4f
-            canvas.drawCircle(point.x, point.y, 10f, paintDotOutline)
+            canvas.drawCircle(point.x, apY, 10f, paintDotOutline)
             paintDotOutline.strokeWidth = 5f
-            canvas.drawCircle(point.x, point.y, 9f, paintRouterFill)
-            val labelMinY = (mapRect.top + 30f).coerceAtMost(mapRect.centerY())
-            val labelMaxY = (mapRect.bottom - 30f).coerceAtLeast(mapRect.centerY())
-            val nameY = routerLabelY(point, referencePos).coerceIn(labelMinY, labelMaxY)
+            canvas.drawCircle(point.x, apY, 9f, paintRouterFill)
+            val labelMinY = mapRect.top + 30f
+            val labelMaxY = (mapRect.bottom - 30f).coerceAtLeast(labelMinY)
+            val nameY = (apY - 26f).coerceIn(labelMinY, labelMaxY)
             val routerLabel = "AP ${lab.substringAfter("LAB ")}"
             drawHaloText(canvas, routerLabel, point.x, nameY, paintRouterLabel)
-            val distText = referenceMarker?.distances?.get(lab)
-                ?.let { if (it < 90.0) "${"%.1f".format(it)} m" else "–" } ?: "–"
-            val distY = (if (nameY < point.y) point.y + 52f else point.y - 40f)
-                .coerceIn(labelMinY, labelMaxY)
-            drawHaloText(canvas, distText, point.x, distY, paintDistValue)
         }
 
         drawLegend(canvas)
@@ -410,6 +410,18 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             }
             drawHaloText(canvas, labelText, labelPt.x, labelPt.y, labelPaint)
             if (textScale < 1f) canvas.restore()
+        }
+
+        if (referenceMarker != null) {
+            val labelMinY = mapRect.top + 30f
+            val labelMaxY = (mapRect.bottom - 30f).coerceAtLeast(labelMinY)
+            for ((lab, point) in routers) {
+                val distance = referenceMarker.distances[lab]?.takeIf { it < 90.0 } ?: continue
+                val apY = point.y + mapRect.width() * AP_DRAW_OFFSET_FRACTION
+                val distY = (apY + 40f).coerceIn(labelMinY, labelMaxY)
+                val distText = "${"%.1f".format(distance)} m"
+                drawHaloText(canvas, distText, point.x, distY, paintDistValue)
+            }
         }
 
         val caption = "$placedCount on map" +
