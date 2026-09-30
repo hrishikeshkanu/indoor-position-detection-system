@@ -3,7 +3,7 @@
 ## Project overview
 Android app (Kotlin, Android Views, custom Canvas drawing) for indoor position detection using WiFi RSSI. The app scans nearby access points, compares signal strengths, and estimates the user's room/position in a lab environment (routers mapped to LAB 1–LAB 4). Firebase Authentication gates the dashboard, and Firebase Realtime Database stores scan data and live multi-user presence.
 
-Current state: login/registration, database connectivity, and the **multi-user presence feature** are complete and working across devices (see "Feature history" below).
+Current state: login/registration, database connectivity, the **multi-user presence feature**, and the **floor-plan image map (Stages 1–6b)** are complete and working across devices (see "Feature history" below).
 
 ## Repository structure
 - `app/` – Android app module
@@ -12,11 +12,12 @@ Current state: login/registration, database connectivity, and the **multi-user p
     - `RegisterActivity.kt` – creates the account and writes `users/{uid}` (`name`, `email`, `createdAt`)
     - `MainActivity.kt` – auth guard, permission request, WiFi scanning, dashboard UI, detection-time stats, `scans` upload, 25 s auto-refresh, ACTIVE USERS card
     - `MapActivity.kt` – floor-map screen with its own live WiFi scanning (25 s Handler-driven, no self-triggering loop)
-    - `MapView.kt` – custom Canvas view: router nodes, coverage zones, multi-user markers, overlap spreading, crowd scaling
+    - `MapView.kt` – custom Canvas view: floor-plan image background, AP markers, detected-lab highlight, multi-user markers, overlap spreading, crowd scaling, legend, caption
     - `SignalGraphView.kt` – RSSI bar graph on the dashboard
     - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping; also holds `calculateDistance()`
     - `PresenceRepository.kt` – owner-keyed multi-subscriber publisher/reader of live user presence
   - `src/main/res/` – layouts (`activity_main`, `activity_map`, `activity_login`, `activity_register`, `item_active_user`), drawables, themes
+  - `src/main/res/drawable-nodpi/floor_map.jpeg` – square floor-plan image used as the map background
   - `google-services.json` – Firebase config; do not replace with placeholders
 - `build.gradle.kts`, `settings.gradle.kts`, `gradle/libs.versions.toml` – Gradle config (version catalog in use)
 - `app/build.gradle.kts` – Firebase deps are BOM-managed
@@ -34,19 +35,66 @@ Current state: login/registration, database connectivity, and the **multi-user p
 7. Each scan is pushed to Firebase `scans` (with `timestamp`, `detectedLab`, `signals`, `userId`) and published to `presence/{uid}`.
 8. "VIEW MAP" passes current distances to `MapActivity` via the `"distances"` extra; the map also scans on its own every 25 s while visible.
 
-## Position logic (MapView)
-- Routers sit at fixed corners (18% / 14% insets); `zoneRadius = 0.30 * width`; `mapScale = diagonal / 20`.
+## Floor map (MapView)
+
+### Geometry
+- `mapRect` is the largest centered square inside the view (`side = min(w, h)`). Extra space is letterboxed with the dark background. Everything map-related is positioned relative to `mapRect`, never the whole view.
+- The floor image `app/src/main/res/drawable-nodpi/floor_map.jpeg` is decoded once in `onSizeChanged` (bounds-first, power-of-two `inSampleSize`, try/catch; null on failure) and drawn into `mapRect` with a dark scrim (`argb(90, 10, 22, 37)`). It is recycled in `onDetachedFromWindow`. If the bitmap is null, a square grid (cell = `mapRect.width() / 10`, clipped to `mapRect`) is drawn instead.
+- Routers (logical points) sit at the lab centers, as fractions of `mapRect`: LAB 1 (0.25, 0.25), LAB 2 (0.75, 0.25), LAB 3 (0.25, 0.75), LAB 4 (0.75, 0.75).
+- `mapScale = mapRect.width() / MAP_WIDTH_METERS` (20 m assumed map width, so 1 m = side/20 px).
+- `zoneRadius = 0.22 * mapRect.width()`. It is no longer drawn; it is kept only for `estimatePosition()` clamping.
+- Coverage circles were removed.
+
+### Position logic
 - `estimatePosition(distances)`:
   - Normal case (2+ usable routers): primary = nearest usable router, secondary = second nearest; the dot is placed from the primary toward the secondary at `min(primaryDistance * mapScale, zoneRadius - 30)`.
-  - Single-router fallback (exactly 1 router with distance < 90): start at that router and move toward the map center by `min(distance * mapScale, zoneRadius - 30)`.
+  - Single-router fallback (exactly 1 router with distance < 90): start at that router and move toward the `mapRect` center (`mapRect.centerX()/centerY()`) by `min(distance * mapScale, zoneRadius - 30)`.
   - Zero usable routers: returns `null`; the marker cannot be placed and is counted as "out of range".
 - Keep this math stable; new behavior must be a fallback or a post-processing step, never a fork.
-- **Overlap resolution (post-process in `onDraw`)**: markers whose true positions are within 60 px are grouped. The self marker stays at its true position; others are spread on concentric rings around the group anchor (self position, else centroid). Ring 1 radius 50 px, each next ring +45 px, capacity `max(1, floor(2π·r / 44))`, start angle −90°, every other ring offset by half a step. Non-self markers are sorted by name then original index so dots do not shuffle between updates. Final positions are clamped inside the view with ~30 px padding.
-- **Draw order**: others first, self last (always on top) with a thin white ring. Self is green (`#00FF9C`), others pink (`#FF6EC7`). The self label shows the user's name, not the literal "YOU".
+- **Overlap resolution (post-process in `onDraw`)**: markers whose true positions are within 60 px are grouped. The self marker stays at its true position; others are spread on concentric rings around the group anchor (self position, else centroid). Ring 1 radius 50 px, each next ring +45 px, capacity `max(1, floor(2π·r / 44))`, start angle −90°, every other ring offset by half a step. Non-self markers are sorted by name then original index so dots do not shuffle between updates.
+- **Clamping**: marker dots AND marker labels are clamped to `mapRect` with a 30 px inset.
 - **Crowd scaling**: with more than 12 placed markers, others use dot radius 11, glow 22, label size 22f, and labels longer than 10 characters are truncated to 9 + "…". Self keeps normal size and full name.
-- **Label collision**: up to 4 candidate positions (above, below, alternating left/right); never outside the view.
-- **Caption**: bottom of the map shows "N on map" plus ", M out of range" when M > 0.
-- Distances `>= 90` render as "–" in the router distance labels.
+- **Label collision**: up to 4 candidate positions (above, below, alternating left/right); `youLabelOffset()` uses radius 44 px and a 90 px "near a router" threshold so labels stay close to their dot.
+
+### Drawing order (onDraw)
+1. Dark background fill (letterbox).
+2. Floor image + scrim (or fallback grid), then the cyan border around `mapRect`.
+3. Name-cover patches over the image's printed room names (only if `floorBitmap != null` and `HIDE_IMAGE_ROOM_NAMES`).
+4. Detected-lab highlight: the lab with the smallest reference-marker distance < 90 (reference = self marker, else first) gets a translucent green rounded rect (`argb(38,0,255,156)` fill, `argb(200,0,255,156)` stroke). Nothing is drawn if no lab is usable.
+5. Routers: glow (24 px), dark outline ring (10 px), cyan dot (9 px), and the "LAB n" name (22f) above the dot, all with dark halo text. Drawn at the logical router point plus `AP_DRAW_OFFSET_FRACTION` (currently 0f, i.e. exactly at the lab center).
+6. Legend (top-left of `mapRect`: green "You", pink "Others", cyan "Router (AP)"); skipped if `mapRect.width() < 400`.
+7. Markers: others first, self last (always on top) with a white ring; dark outline 5 px behind every dot; halo text labels. Self is green (`#00FF9C`), others pink (`#FF6EC7`). The self label shows the user's name, not "YOU".
+8. Router distance texts (below each router dot), drawn AFTER the markers so dots never hide them. Not drawn when the reference marker's distance is ≥ 90 or missing.
+9. Caption pill at the bottom of `mapRect`: "N on map" plus ", M out of range" when M > 0.
+
+### Tunables (retune when the floor image is replaced)
+| Constant | Current value | Purpose |
+|---|---|---|
+| `MAP_WIDTH_METERS` | 20f | Real-world width of the map; smaller = dots move farther from APs per meter |
+| Router fractions | (0.25,0.25) (0.75,0.25) (0.25,0.75) (0.75,0.75) | Lab centers as fractions of `mapRect` |
+| `zoneRadius` fraction | 0.22 | Clamp radius for `estimatePosition()` |
+| `AP_DRAW_OFFSET_FRACTION` | 0f | Vertical shift of the drawn AP marker (fraction of `mapRect.width()`) |
+| Lab highlight rectangles | see below | Room rectangles for the detected-lab highlight |
+| Name-cover patch table | see below | Rectangles that hide the image's printed room names |
+| `HIDE_IMAGE_ROOM_NAMES` | true | Set false if the image has no printed names |
+
+Lab highlight rectangles (left, top, right, bottom as fractions of `mapRect`):
+- LAB 1: 0.03, 0.03, 0.45, 0.44
+- LAB 2: 0.55, 0.03, 0.97, 0.44
+- LAB 3: 0.03, 0.56, 0.45, 0.97
+- LAB 4: 0.55, 0.56, 0.97, 0.97
+
+Name-cover patches (same format; paint `argb(235, 150, 155, 165)`, rounded radius 8f):
+- LAB 1: 0.17, 0.205, 0.33, 0.285
+- LAB 2: 0.67, 0.205, 0.83, 0.285
+- LAB 3: 0.17, 0.69, 0.33, 0.77
+- LAB 4: 0.67, 0.69, 0.83, 0.77
+
+### Replacing the floor image
+1. Keep the same file name and path: `app/src/main/res/drawable-nodpi/floor_map.jpeg`. If the new file is a PNG, delete the old JPEG first (two `floor_map.*` files cause a duplicate-resource build error).
+2. The image must be square, ideally under ~2000×2000 px, with four labs as quadrants (LAB 1 top-left, LAB 2 top-right, LAB 3 bottom-left, LAB 4 bottom-right).
+3. Build → Clean Project, then run.
+4. Retune the tunables above. If the new image has no printed room names, set `HIDE_IMAGE_ROOM_NAMES = false`.
 
 ## Firebase Realtime Database schema
 ```
@@ -97,7 +145,8 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - `clear()` stops all subscribers, removes the caller's `presence/{uid}` (with a 2 s timeout fallback), and resets the cached name.
 - `publish()` is async; failures are logged with `Log.w` under tag `PresenceRepository`, never Toasted.
 
-## Feature history: multi-user presence (all done)
+## Feature history
+### Multi-user presence (all done)
 1. Write layer – `publish()/clear()`, called after each scan in `MainActivity` and `MapActivity`; `clear()` before `signOut()`. ✅
 2. Read layer – ValueEventListener on `presence`, stale filtering, self flagged. ✅
 3. Main page – "ACTIVE USERS" card. ✅
@@ -108,6 +157,14 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 8. Listener lifecycle – multi-subscriber repository; `MapActivity` starts/stops listening and the receiver in `onStart`/`onStop`; 25 s Handler scan replaces the self-triggering loop. ✅
 9. Large-crowd support – concentric rings, crowd scaling, "N on map / M out of range". ✅
 10. Cleanup – debug logs removed, README and this file updated. ✅
+
+### Floor-plan image map (all done)
+1. Stage 1 – square image background in `mapRect`, scrim, halo text, dot outlines. ✅
+2. Stage 2 – routers/scale/zone radius anchored to `mapRect`; square grid fallback; caption moved inside the map. ✅
+3. Stage 3 – marker and label clamping to `mapRect`; detected-lab highlight; tighter labels; router label/distance collision fix. ✅
+4. Stage 4 – small AP markers, readable distance text, caption pill, legend, docs. ✅
+5. Stage 5 – distance texts drawn after markers; unusable distances hidden; `AP_DRAW_OFFSET_FRACTION` added. ✅
+6. Stage 6 / 6b – AP drawn at the lab center (offset 0f); labels read "LAB n"; the image's printed room names covered by patches (`HIDE_IMAGE_ROOM_NAMES`); Lab 1/2 patches moved to the correct height. ✅
 
 ## Invariants (do not break)
 - BSSID map lives only in `RouterConfig.kt`; never redeclare it in activities.
@@ -123,6 +180,9 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - `PresenceRepository` uses owner-keyed subscribers (`startListening(owner, ...)` / `stopListening(owner)`). Every Activity that listens must stop in the matching lifecycle callback (`onStart` ↔ `onStop`).
 - Do not reintroduce `startScan()` inside a scan-result receiver (self-triggering loop). Use a Handler with a 25 s interval, started in `onStart`/`onResume` and cancelled in `onStop`/`onPause`.
 - `MapView.estimatePosition()` normal-case math stays unchanged; additions are fallbacks or post-processing.
+- `MapView` positions everything relative to `mapRect`; do not go back to whole-view coordinates.
+- The `routers` map holds the LOGICAL router points used by `estimatePosition()`; visual-only shifts (like `AP_DRAW_OFFSET_FRACTION`) must be applied at draw time only.
+- Image-specific values (router fractions, lab rectangles, name-cover patches, `MAP_WIDTH_METERS`) must stay as named, tunable constants.
 - Always null-guard `r.BSSID` in scan loops.
 
 ## Known issues / tech debt (fix only when relevant to the task, or when asked)
@@ -133,6 +193,9 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - Test data with a far-future `timestamp` never goes stale; delete any `presence/fake*` children after load testing.
 - `hs_err_pid*.log` JVM crash dumps in the repo root are IDE/Gradle memory crashes, not app bugs. Delete them and add `hs_err_pid*.log` to `.gitignore`. If Gradle/VS Code crash with out-of-memory, close other heavy apps or lower `org.gradle.jvmargs` / raise system page file.
 - Free Firebase plan: about 100 simultaneous connections and a 10 GB/month download quota; bandwidth grows roughly with users squared.
+- The name-cover patches are flat-colored boxes and are slightly visible on the floor texture. An image without printed room names (with `HIDE_IMAGE_ROOM_NAMES = false`) is the clean fix.
+- A user's label can overlap a router's distance text when they stand directly below an AP (rare, cosmetic).
+- Dot distance from an AP depends on the assumed 20 m map width and the path-loss model; it is approximate by design (room-level accuracy).
 
 ## Build and validation
 ```bash
@@ -144,22 +207,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 
 ## Coding conventions
 - Idiomatic, readable Kotlin consistent with the existing style; targeted edits over refactors.
-- Handle edge cases: missing routers, all signals `-100`, null user, null/empty database values, empty user lists, duplicate names.
+- Handle edge cases: missing routers, all signals `-100`, null user, null/empty database values, empty user lists, duplicate names, empty `mapRect`, null floor bitmap.
 - Router BSSIDs are case-insensitive but must match `RouterConfig` keys after `uppercase()`.
-- If you change detection logic, router mapping, rules, or the schema, update README and this file.
+- If you change detection logic, router mapping, rules, the schema, or the map geometry/tunables, update README and this file.
 - Accuracy target is room-level, not precise coordinates.
-
-## Floor map background (added)
-- MapView draws `app/src/main/res/drawable-nodpi/floor_map.jpeg` as a square background inside `mapRect` (centered, letterboxed, dark scrim).
-- Routers are at the lab centers: fractions (0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75) of `mapRect` for LAB 1–LAB 4.
-- `mapScale = mapRect.width() / 20` (20 m assumed map width); `zoneRadius = 0.22 * mapRect.width()`.
-- Coverage circles are no longer drawn; the grid fallback is square and clipped to `mapRect`.
-- Labels use a dark halo and dots a dark outline for readability.
-- Markers and marker labels are clamped to `mapRect` with a 30 px inset.
-- The detected lab (reference marker's smallest distance < 90) gets a translucent green highlight. Lab rectangles as fractions of `mapRect`: LAB 1 (0.03, 0.03, 0.45, 0.44), LAB 2 (0.55, 0.03, 0.97, 0.44), LAB 3 (0.03, 0.56, 0.45, 0.97), LAB 4 (0.55, 0.56, 0.97, 0.97).
-- Router AP markers use a 9 px dot, 24 px glow, and `LAB n` labels; they are drawn at the lab centers (`AP_DRAW_OFFSET_FRACTION = 0f`).
-- The floor image's printed room names are covered by rounded patches controlled by `HIDE_IMAGE_ROOM_NAMES`. Patch fractions: LAB 1 (0.17, 0.205, 0.33, 0.285), LAB 2 (0.67, 0.205, 0.83, 0.285), LAB 3 (0.17, 0.69, 0.33, 0.77), LAB 4 (0.67, 0.69, 0.83, 0.77). Retune the patch table when replacing the floor image.
-- Distance labels use a bold light paint, are drawn after user markers, and are omitted for missing or unusable distances (`>= 90`). Retune `AP_DRAW_OFFSET_FRACTION` when replacing the floor image.
-- The map caption uses a dark pill, and a top-left legend identifies you, other users, and routers on maps at least 400 px wide.
-- Marker label offset radius is 44f with a 90f near-router threshold.
-- All four stages are complete. Tunables: `MAP_WIDTH_METERS` (20f), router fractions (0.25/0.75), `zoneRadius` fraction (0.22), lab rectangle fractions listed above, `AP_DRAW_OFFSET_FRACTION` (0f), `IMAGE_ROOM_NAME_COVER_FRACTIONS` (patch table), and `HIDE_IMAGE_ROOM_NAMES`.
