@@ -21,12 +21,20 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         // Vertical offset of the drawn AP marker below the logical router point,
         // as a fraction of mapRect.width(). Tune when the floor image changes so
         // the AP marker does not cover the image's printed room names.
-        private const val AP_DRAW_OFFSET_FRACTION = 0.07f
+        private const val AP_DRAW_OFFSET_FRACTION = 0f
+        private const val HIDE_IMAGE_ROOM_NAMES = true
         private val LAB_RECT_FRACTIONS = mapOf(
             "LAB 1" to listOf(0.03f, 0.03f, 0.45f, 0.44f),
             "LAB 2" to listOf(0.55f, 0.03f, 0.97f, 0.44f),
             "LAB 3" to listOf(0.03f, 0.56f, 0.45f, 0.97f),
             "LAB 4" to listOf(0.55f, 0.56f, 0.97f, 0.97f)
+        )
+        // Covers the room name printed in the floor image; retune when replacing the image.
+        private val IMAGE_ROOM_NAME_COVER_FRACTIONS = mapOf(
+            "LAB 1" to listOf(0.17f, 0.42f, 0.33f, 0.50f),
+            "LAB 2" to listOf(0.67f, 0.42f, 0.83f, 0.50f),
+            "LAB 3" to listOf(0.17f, 0.69f, 0.33f, 0.77f),
+            "LAB 4" to listOf(0.67f, 0.69f, 0.83f, 0.77f)
         )
     }
 
@@ -44,6 +52,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val paintFloor = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
     private val paintScrim = Paint().apply {
         color = Color.argb(90, 10, 22, 37); style = Paint.Style.FILL
+    }
+    private val paintNameCover = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(235, 150, 155, 165); style = Paint.Style.FILL
     }
     private val paintLabHighlightFill = Paint().apply {
         color = Color.argb(38, 0, 255, 156); style = Paint.Style.FILL
@@ -261,6 +272,18 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
                 }
             }
         }
+        if (HIDE_IMAGE_ROOM_NAMES && floorBitmap != null && !mapRect.isEmpty) {
+            val side = mapRect.width()
+            for ((_, fractions) in IMAGE_ROOM_NAME_COVER_FRACTIONS) {
+                val coverRect = RectF(
+                    mapRect.left + side * fractions[0],
+                    mapRect.top + side * fractions[1],
+                    mapRect.left + side * fractions[2],
+                    mapRect.top + side * fractions[3]
+                )
+                canvas.drawRoundRect(coverRect, 8f, 8f, paintNameCover)
+            }
+        }
         canvas.drawRect(mapRect.left + 4f, mapRect.top + 4f, mapRect.right - 4f, mapRect.bottom - 4f, paintBorder)
         if (routers.isEmpty()) return
 
@@ -294,7 +317,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             val labelMinY = mapRect.top + 30f
             val labelMaxY = (mapRect.bottom - 30f).coerceAtLeast(labelMinY)
             val nameY = (apY - 26f).coerceIn(labelMinY, labelMaxY)
-            val routerLabel = "AP ${lab.substringAfter("LAB ")}"
+            val routerLabel = "LAB ${lab.substringAfter("LAB ")}"
             drawHaloText(canvas, routerLabel, point.x, nameY, paintRouterLabel)
         }
 
