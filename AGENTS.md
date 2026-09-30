@@ -148,3 +148,10 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - Router BSSIDs are case-insensitive but must match `RouterConfig` keys after `uppercase()`.
 - If you change detection logic, router mapping, rules, or the schema, update README and this file.
 - Accuracy target is room-level, not precise coordinates.
+
+## Floor map background (added)
+- MapView draws `app/src/main/res/drawable-nodpi/floor_map.jpeg` as a square background inside `mapRect` (centered, letterboxed, dark scrim).
+- Real-world map width is assumed to be 20 m.
+- Coverage circles and grid are no longer drawn; `zoneRadius` is kept only for `estimatePosition()` clamping.
+- Labels use a dark halo and dots a dark outline for readability.
+- Staged work: 1 background, 2 routers/scale to `mapRect`, 3 clamping and lab highlight, 4 polish and docs.

@@ -21,6 +21,19 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val paintBackground = Paint().apply {
         color = Color.parseColor("#0A1625"); style = Paint.Style.FILL
     }
+    private var mapRect = RectF()
+    private var floorBitmap: Bitmap? = null
+    private val paintFloor = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+    private val paintScrim = Paint().apply {
+        color = Color.argb(90, 10, 22, 37); style = Paint.Style.FILL
+    }
+    private val paintDotOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE; strokeWidth = 4f
+    }
+    private val paintLabelHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE
+        strokeWidth = 6f; textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
+    }
     private val paintGrid = Paint().apply {
         color = Color.parseColor("#162840"); strokeWidth = 1.5f; style = Paint.Style.STROKE
     }
@@ -77,6 +90,29 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        val side = minOf(w, h).toFloat()
+        val left = (w - side) / 2f
+        val top = (h - side) / 2f
+        mapRect.set(left, top, left + side, top + side)
+
+        floorBitmap?.recycle()
+        floorBitmap = null
+        if (side > 0f) {
+            try {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeResource(resources, R.drawable.floor_map, bounds)
+                check(bounds.outWidth > 0 && bounds.outHeight > 0)
+
+                var sampleSize = 1
+                val largestDimension = maxOf(bounds.outWidth, bounds.outHeight)
+                while (largestDimension / sampleSize > side) sampleSize *= 2
+
+                val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                floorBitmap = BitmapFactory.decodeResource(resources, R.drawable.floor_map, options)
+            } catch (_: Exception) {
+                floorBitmap = null
+            }
+        }
         val px = w * 0.18f; val py = h * 0.14f
         routers = mutableMapOf(
             "LAB 1" to PointF(px,       py),
@@ -86,6 +122,11 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         )
         mapScale   = sqrt((w * w + h * h).toDouble()).toFloat() / 20f
         zoneRadius = w * 0.30f
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        floorBitmap?.recycle(); floorBitmap = null
     }
 
     fun updateUsers(users: List<UserMarker>) {
@@ -155,27 +196,28 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         val w = width.toFloat(); val h = height.toFloat()
 
         canvas.drawRect(0f, 0f, w, h, paintBackground)
-        var x = 80f; while (x < w) { canvas.drawLine(x, 0f, x, h, paintGrid); x += 80f }
-        var y = 80f; while (y < h) { canvas.drawLine(0f, y, w, y, paintGrid); y += 80f }
-        canvas.drawRect(4f, 4f, w - 4f, h - 4f, paintBorder)
+        if (floorBitmap != null) {
+            canvas.drawBitmap(floorBitmap!!, null, mapRect, paintFloor)
+            canvas.drawRect(mapRect, paintScrim)
+        } else {
+            var x = 80f; while (x < w) { canvas.drawLine(x, 0f, x, h, paintGrid); x += 80f }
+            var y = 80f; while (y < h) { canvas.drawLine(0f, y, w, y, paintGrid); y += 80f }
+        }
+        canvas.drawRect(mapRect.left + 4f, mapRect.top + 4f, mapRect.right - 4f, mapRect.bottom - 4f, paintBorder)
         if (routers.isEmpty()) return
 
         val referenceMarker = userMarkers.firstOrNull { it.isSelf } ?: userMarkers.firstOrNull()
         val referencePos = referenceMarker?.let { estimatePosition(it.distances) }
 
-        for ((_, point) in routers) {
-            canvas.drawCircle(point.x, point.y, zoneRadius, paintCoverageFill)
-            canvas.drawCircle(point.x, point.y, zoneRadius, paintCoverageStroke)
-        }
         for ((lab, point) in routers) {
             canvas.drawCircle(point.x, point.y, 40f, paintRouterGlow)
             canvas.drawCircle(point.x, point.y, 18f, paintRouterFill)
             val nameY = routerLabelY(point, referencePos)
-            canvas.drawText(lab, point.x, nameY, paintRouterLabel)
+            drawHaloText(canvas, lab, point.x, nameY, paintRouterLabel)
             val distText = referenceMarker?.distances?.get(lab)
                 ?.let { if (it < 90.0) "${"%.1f".format(it)} m" else "–" } ?: "–"
             val distY = if (nameY < point.y) nameY - 24f else nameY + 30f
-            canvas.drawText(distText, point.x, distY, paintDistLabel)
+            drawHaloText(canvas, distText, point.x, distY, paintDistLabel)
         }
 
         data class EstimatedMarker(val marker: UserMarker, val truePos: PointF?)
@@ -250,6 +292,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             val dotRadius = if (marker.isSelf) 20f else if (isCrowded) 11f else 16f
 
             canvas.drawCircle(pos.x, pos.y, glowRadius, glowPaint)
+            canvas.drawCircle(pos.x, pos.y, dotRadius + 1f, paintDotOutline)
             canvas.drawCircle(pos.x, pos.y, dotRadius, fillPaint)
             if (marker.isSelf) canvas.drawCircle(pos.x, pos.y, dotRadius + 2f, paintSelfRing)
 
@@ -283,13 +326,19 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
                 canvas.save()
                 canvas.scale(textScale, 1f, labelPt.x, labelPt.y)
             }
-            canvas.drawText(labelText, labelPt.x, labelPt.y, labelPaint)
+            drawHaloText(canvas, labelText, labelPt.x, labelPt.y, labelPaint)
             if (textScale < 1f) canvas.restore()
         }
 
         val caption = "$placedCount on map" +
             if (outOfRangeCount > 0) ", $outOfRangeCount out of range" else ""
-        canvas.drawText(caption, w / 2f, (h - 16f).coerceAtLeast(24f), paintDistLabel)
+        drawHaloText(canvas, caption, w / 2f, (h - 16f).coerceAtLeast(24f), paintDistLabel)
+    }
+
+    private fun drawHaloText(canvas: Canvas, text: String, x: Float, y: Float, paint: Paint) {
+        paintLabelHalo.textSize = paint.textSize
+        canvas.drawText(text, x, y, paintLabelHalo)
+        canvas.drawText(text, x, y, paint)
     }
 
     private fun copyPoint(point: PointF): PointF = PointF(point.x, point.y)
