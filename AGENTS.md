@@ -151,7 +151,8 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 
 ## Floor map background (added)
 - MapView draws `app/src/main/res/drawable-nodpi/floor_map.jpeg` as a square background inside `mapRect` (centered, letterboxed, dark scrim).
-- Real-world map width is assumed to be 20 m.
-- Coverage circles and grid are no longer drawn; `zoneRadius` is kept only for `estimatePosition()` clamping.
+- Routers are at the lab centers: fractions (0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75) of `mapRect` for LAB 1–LAB 4.
+- `mapScale = mapRect.width() / 20` (20 m assumed map width); `zoneRadius = 0.22 * mapRect.width()`.
+- Coverage circles are no longer drawn; the grid fallback is square and clipped to `mapRect`.
 - Labels use a dark halo and dots a dark outline for readability.
-- Staged work: 1 background, 2 routers/scale to `mapRect`, 3 clamping and lab highlight, 4 polish and docs.
+- Stage 1 (background) and Stage 2 (routers/scale to `mapRect`) are done; Stage 3 (clamping to `mapRect`, lab highlight) and Stage 4 (polish/docs) remain.

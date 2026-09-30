@@ -12,6 +12,14 @@ import kotlin.math.sqrt
 
 class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
+    companion object {
+        private const val MAP_WIDTH_METERS = 20f
+        private const val LAB_LEFT = 0.25f
+        private const val LAB_RIGHT = 0.75f
+        private const val LAB_TOP = 0.25f
+        private const val LAB_BOTTOM = 0.75f
+    }
+
     data class UserMarker(
         val name: String,
         val distances: Map<String, Double>,
@@ -113,15 +121,23 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
                 floorBitmap = null
             }
         }
-        val px = w * 0.18f; val py = h * 0.14f
-        routers = mutableMapOf(
-            "LAB 1" to PointF(px,       py),
-            "LAB 2" to PointF(w - px,   py),
-            "LAB 3" to PointF(px,       h - py),
-            "LAB 4" to PointF(w - px,   h - py)
-        )
-        mapScale   = sqrt((w * w + h * h).toDouble()).toFloat() / 20f
-        zoneRadius = w * 0.30f
+        if (!mapRect.isEmpty) {
+            val side = mapRect.width()
+            fun at(fx: Float, fy: Float) =
+                PointF(mapRect.left + side * fx, mapRect.top + side * fy)
+            routers = mutableMapOf(
+                "LAB 1" to at(LAB_LEFT, LAB_TOP),
+                "LAB 2" to at(LAB_RIGHT, LAB_TOP),
+                "LAB 3" to at(LAB_LEFT, LAB_BOTTOM),
+                "LAB 4" to at(LAB_RIGHT, LAB_BOTTOM)
+            )
+            mapScale = side / MAP_WIDTH_METERS
+            zoneRadius = side * 0.22f
+        } else {
+            routers.clear()
+            mapScale = 0f
+            zoneRadius = 0f
+        }
     }
 
     override fun onDetachedFromWindow() {
@@ -177,7 +193,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
         val primaryPt   = routers[sorted[0].key] ?: return null
         if (sorted.size == 1) {
-            val center = PointF(width / 2f, height / 2f)
+            val center = PointF(mapRect.centerX(), mapRect.centerY())
             val offset = (sorted[0].value.toFloat() * mapScale).coerceAtMost(zoneRadius - 30f)
             val dir = unitVector(primaryPt, center)
             return PointF(primaryPt.x + dir.x * offset, primaryPt.y + dir.y * offset)
@@ -200,8 +216,19 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             canvas.drawBitmap(floorBitmap!!, null, mapRect, paintFloor)
             canvas.drawRect(mapRect, paintScrim)
         } else {
-            var x = 80f; while (x < w) { canvas.drawLine(x, 0f, x, h, paintGrid); x += 80f }
-            var y = 80f; while (y < h) { canvas.drawLine(0f, y, w, y, paintGrid); y += 80f }
+            val cellSize = mapRect.width() / 10f
+            if (cellSize > 0f) {
+                var x = mapRect.left
+                while (x <= mapRect.right) {
+                    canvas.drawLine(x, mapRect.top, x, mapRect.bottom, paintGrid)
+                    x += cellSize
+                }
+                var y = mapRect.top
+                while (y <= mapRect.bottom) {
+                    canvas.drawLine(mapRect.left, y, mapRect.right, y, paintGrid)
+                    y += cellSize
+                }
+            }
         }
         canvas.drawRect(mapRect.left + 4f, mapRect.top + 4f, mapRect.right - 4f, mapRect.bottom - 4f, paintBorder)
         if (routers.isEmpty()) return
@@ -212,11 +239,14 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         for ((lab, point) in routers) {
             canvas.drawCircle(point.x, point.y, 40f, paintRouterGlow)
             canvas.drawCircle(point.x, point.y, 18f, paintRouterFill)
-            val nameY = routerLabelY(point, referencePos)
+            val labelMinY = (mapRect.top + 30f).coerceAtMost(mapRect.centerY())
+            val labelMaxY = (mapRect.bottom - 30f).coerceAtLeast(mapRect.centerY())
+            val nameY = routerLabelY(point, referencePos).coerceIn(labelMinY, labelMaxY)
             drawHaloText(canvas, lab, point.x, nameY, paintRouterLabel)
             val distText = referenceMarker?.distances?.get(lab)
                 ?.let { if (it < 90.0) "${"%.1f".format(it)} m" else "–" } ?: "–"
-            val distY = if (nameY < point.y) nameY - 24f else nameY + 30f
+            val distY = (if (nameY < point.y) nameY - 24f else nameY + 30f)
+                .coerceIn(labelMinY, labelMaxY)
             drawHaloText(canvas, distText, point.x, distY, paintDistLabel)
         }
 
@@ -332,7 +362,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
         val caption = "$placedCount on map" +
             if (outOfRangeCount > 0) ", $outOfRangeCount out of range" else ""
-        drawHaloText(canvas, caption, w / 2f, (h - 16f).coerceAtLeast(24f), paintDistLabel)
+        drawHaloText(canvas, caption, mapRect.centerX(), mapRect.bottom - 16f, paintDistLabel)
     }
 
     private fun drawHaloText(canvas: Canvas, text: String, x: Float, y: Float, paint: Paint) {
