@@ -28,8 +28,8 @@ Current state: login/registration, database connectivity, the **multi-user prese
 2. `MainActivity` auth guard bounces unauthenticated users back to `LoginActivity`.
 3. Requests `ACCESS_FINE_LOCATION`, registers a `SCAN_RESULTS_AVAILABLE_ACTION` receiver, starts scanning.
 4. BSSIDs (uppercased, null-safe: `r.BSSID?.uppercase() ?: continue`) are matched against `RouterConfig.routerMap`; strongest RSSI per lab wins (`-100` = not seen).
-   - LAB 1: `54:AF:97:28:6B:79`; LAB 2: `3C:78:95:31:6C:54`
-   - LAB 3: `40:3F:8C:E0:72:37`; LAB 4: `40:3F:8C:E0:72:36`
+    - LAB 1: `3C:84:6A:B5:DE:24`; LAB 2: `3C:78:95:31:6C:54`
+    - LAB 3: `20:23:51:77:56:E6`; LAB 4: `40:3F:8C:E0:72:36`
 5. Strongest lab = detected lab. Signal quality labels: Strong ≥ -60, Good ≥ -70, Weak ≥ -80, Very Weak < -80, Out of Range = -100.
 6. Distance = `10 ^ ((-40 - rssi) / (10 * 3.0))`, `99.0` when not seen.
 7. Each scan is pushed to Firebase `scans` (with `timestamp`, `detectedLab`, `signals`, `userId`) and published to `presence/{uid}`.

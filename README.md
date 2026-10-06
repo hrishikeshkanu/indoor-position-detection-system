@@ -67,9 +67,9 @@ The BSSID-to-room mapping is defined only in `RouterConfig.kt`, in `routerMap`. 
 
 | Lab | BSSID |
 |---|---|
-| LAB 1 | `54:AF:97:28:6B:79` |
+| LAB 1 | `3C:84:6A:B5:DE:24` |
 | LAB 2 | `3C:78:95:31:6C:54` |
-| LAB 3 | `40:3F:8C:E0:72:37` |
+| LAB 3 | `20:23:51:77:56:E6` |
 | LAB 4 | `40:3F:8C:E0:72:36` |
 
 To use this app in another building, replace those BSSIDs with the access point BSSIDs for your four labs. Enter addresses in the usual colon-separated form; the app normalizes scanned BSSIDs to uppercase before lookup.

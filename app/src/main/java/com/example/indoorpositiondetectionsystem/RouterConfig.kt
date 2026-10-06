@@ -2,9 +2,9 @@ package com.example.indoorpositiondetectionsystem
 
 object RouterConfig {
     val routerMap: Map<String, String> = mapOf(
-        "54:AF:97:28:6B:79" to "LAB 1",
+        "3C:84:6A:B5:DE:24" to "LAB 1",
         "3C:78:95:31:6C:54" to "LAB 2",
-        "40:3F:8C:E0:72:37" to "LAB 3",
+        "20:23:51:77:56:E6" to "LAB 3",
         "40:3F:8C:E0:72:36" to "LAB 4"
     )
 
