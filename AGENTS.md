@@ -13,6 +13,7 @@ Current state: login/registration, database connectivity, the **multi-user prese
     - `MainActivity.kt` – auth guard, permission request, WiFi scanning, dashboard UI, detection-time stats, `scans` upload, 25 s auto-refresh, ACTIVE USERS card
     - `MapActivity.kt` – floor-map screen with its own live WiFi scanning (25 s Handler-driven, no self-triggering loop)
     - `MapView.kt` – custom Canvas view: floor-plan image background, AP markers, detected-lab highlight, multi-user markers, overlap spreading, crowd scaling, legend, caption
+    - `GridConfig.kt` – single source of truth for lab rectangles, 3×3 grid IDs, and pure grid helpers
     - `SignalGraphView.kt` – RSSI bar graph on the dashboard
     - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping; also holds `calculateDistance()`
     - `PresenceRepository.kt` – owner-keyed multi-subscriber publisher/reader of live user presence
@@ -36,6 +37,12 @@ Current state: login/registration, database connectivity, the **multi-user prese
 8. "VIEW MAP" passes current distances to `MapActivity` via the `"distances"` extra; the map also scans on its own every 25 s while visible.
 
 ## Floor map (MapView)
+
+### Grid model (Stage 1)
+- Each lab contains a 3×3 grid with IDs `L{lab}-G{cell}`; lab numbers follow LAB 1–LAB 4, and cells are numbered row-major from top-left (G1) to bottom-right (G9).
+- The lab rectangle fractions are defined only in `GridConfig.kt` as `LAB_RECT_FRACTIONS`; retune them when replacing the floor image.
+- `GridConfig` provides pure helpers for creating and parsing IDs, finding cells and centers, and listing same-lab neighbors.
+- `MapView.SHOW_GRID` controls the faint grid-line overlay; `MapView.SHOW_GRID_LABELS` enables optional cell-number labels and is off by default.
 
 ### Geometry
 - `mapRect` is the largest centered square inside the view (`side = min(w, h)`). Extra space is letterboxed with the dark background. Everything map-related is positioned relative to `mapRect`, never the whole view.
@@ -61,11 +68,12 @@ Current state: login/registration, database connectivity, the **multi-user prese
 2. Floor image + scrim (or fallback grid), then the cyan border around `mapRect`.
 3. Name-cover patches over the image's printed room names (only if `floorBitmap != null` and `HIDE_IMAGE_ROOM_NAMES`).
 4. Detected-lab highlight: the lab with the smallest reference-marker distance < 90 (reference = self marker, else first) gets a translucent green rounded rect (`argb(38,0,255,156)` fill, `argb(200,0,255,156)` stroke). Nothing is drawn if no lab is usable.
-5. Routers: glow (24 px), dark outline ring (10 px), cyan dot (9 px), and the "LAB n" name (22f) above the dot, all with dark halo text. Drawn at the logical router point plus `AP_DRAW_OFFSET_FRACTION` (currently 0f, i.e. exactly at the lab center).
-6. Legend (top-left of `mapRect`: green "You", pink "Others", cyan "Router (AP)"); skipped if `mapRect.width() < 400`.
-7. Markers: others first, self last (always on top) with a white ring; dark outline 5 px behind every dot; halo text labels. Self is green (`#00FF9C`), others pink (`#FF6EC7`). The self label shows the user's name, not "YOU".
-8. Router distance texts (below each router dot), drawn AFTER the markers so dots never hide them. Not drawn when the reference marker's distance is ≥ 90 or missing.
-9. Caption pill at the bottom of `mapRect`: "N on map" plus ", M out of range" when M > 0.
+5. Faint 3×3 lab grid lines (`drawLabGrids`), when `SHOW_GRID` is true; optional cell numbers are controlled by `SHOW_GRID_LABELS`.
+6. Routers: glow (24 px), dark outline ring (10 px), cyan dot (9 px), and the "LAB n" name (22f) above the dot, all with dark halo text. Drawn at the logical router point plus `AP_DRAW_OFFSET_FRACTION` (currently 0f, i.e. exactly at the lab center).
+7. Legend (top-left of `mapRect`: green "You", pink "Others", cyan "Router (AP)"); skipped if `mapRect.width() < 400`.
+8. Markers: others first, self last (always on top) with a white ring; dark outline 5 px behind every dot; halo text labels. Self is green (`#00FF9C`), others pink (`#FF6EC7`). The self label shows the user's name, not "YOU".
+9. Router distance texts (below each router dot), drawn AFTER the markers so dots never hide them. Not drawn when the reference marker's distance is ≥ 90 or missing.
+10. Caption pill at the bottom of `mapRect`: "N on map" plus ", M out of range" when M > 0.
 
 ### Tunables (retune when the floor image is replaced)
 | Constant | Current value | Purpose |
@@ -74,7 +82,9 @@ Current state: login/registration, database connectivity, the **multi-user prese
 | Router fractions | (0.25,0.25) (0.75,0.25) (0.25,0.75) (0.75,0.75) | Lab centers as fractions of `mapRect` |
 | `zoneRadius` fraction | 0.22 | Clamp radius for `estimatePosition()` |
 | `AP_DRAW_OFFSET_FRACTION` | 0f | Vertical shift of the drawn AP marker (fraction of `mapRect.width()`) |
-| Lab highlight rectangles | see below | Room rectangles for the detected-lab highlight |
+| `GridConfig.LAB_RECT_FRACTIONS` | see below | Room rectangles for the detected-lab highlight and grid overlay |
+| `SHOW_GRID` | true | Draw faint 3×3 grid lines within each lab |
+| `SHOW_GRID_LABELS` | false | Draw optional cell numbers on the map |
 | Name-cover patch table | see below | Rectangles that hide the image's printed room names |
 | `HIDE_IMAGE_ROOM_NAMES` | true | Set false if the image has no printed names |
 
@@ -166,6 +176,16 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 5. Stage 5 – distance texts drawn after markers; unusable distances hidden; `AP_DRAW_OFFSET_FRACTION` added. ✅
 6. Stage 6 / 6b – AP drawn at the lab center (offset 0f); labels read "LAB n"; the image's printed room names covered by patches (`HIDE_IMAGE_ROOM_NAMES`); Lab 1/2 patches moved to the correct height. ✅
 
+### Grid localization
+1. Stage 1 – Grid model, pure helpers, faint 3×3 overlay, and unit tests. ✅
+2. Stage 2 – Planned. ⬜
+3. Stage 3 – Planned. ⬜
+4. Stage 4 – Planned. ⬜
+5. Stage 5 – Planned. ⬜
+6. Stage 6 – Planned. ⬜
+7. Stage 7 – Planned. ⬜
+8. Stage 8 – Planned. ⬜
+
 ## Invariants (do not break)
 - BSSID map lives only in `RouterConfig.kt`; never redeclare it in activities.
 - Only `LoginActivity` has the `MAIN`/`LAUNCHER` intent-filter.
@@ -181,6 +201,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - Do not reintroduce `startScan()` inside a scan-result receiver (self-triggering loop). Use a Handler with a 25 s interval, started in `onStart`/`onResume` and cancelled in `onStop`/`onPause`.
 - `MapView.estimatePosition()` normal-case math stays unchanged; additions are fallbacks or post-processing.
 - `MapView` positions everything relative to `mapRect`; do not go back to whole-view coordinates.
+- Grid IDs and lab rectangles are defined only in `GridConfig.kt`.
 - The `routers` map holds the LOGICAL router points used by `estimatePosition()`; visual-only shifts (like `AP_DRAW_OFFSET_FRACTION`) must be applied at draw time only.
 - Image-specific values (router fractions, lab rectangles, name-cover patches, `MAP_WIDTH_METERS`) must stay as named, tunable constants.
 - Always null-guard `r.BSSID` in scan loops.

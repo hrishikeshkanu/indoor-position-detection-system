@@ -33,6 +33,7 @@ The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{
 
 The map draws a square floor-plan image as its background, centered in the view (extra space stays dark). Routers, users, and labels are drawn on top of the image.
 
+- **Lab grid:** each lab has a faint 3×3 overlay, with optional cell-number labels disabled by default.
 - **Routers:** each access point is a small cyan dot at the center of its lab, labeled **LAB 1–LAB 4**, with the live distance in meters drawn below it. No distance is shown for a router that is not detected.
 - **Detected-lab highlight:** the room you are detected in gets a soft green highlight.
 - **Normal placement:** with two or more detected routers, the dot is placed from the nearest router toward the second nearest.
@@ -53,12 +54,11 @@ To use a different image or building:
 1. Replace the file, keeping the exact name `floor_map.jpeg` (if the new file is a PNG, delete the old JPEG first; two files with the same resource name break the build).
 2. The image must be **square** (ideally under about 2000×2000 px) with four labs laid out as quadrants: LAB 1 top-left, LAB 2 top-right, LAB 3 bottom-left, LAB 4 bottom-right.
 3. Run **Build → Clean Project**, then run the app.
-4. In `MapView.kt`, retune the image-specific constants if the layout differs:
+4. Retune the image-specific constants if the layout differs:
    - router position fractions (lab centers)
-   - lab highlight rectangles
+   - lab highlight and grid rectangles in `GridConfig.kt`
    - the name-cover patch table (rectangles that hide room names printed in the image); set `HIDE_IMAGE_ROOM_NAMES = false` if the new image has no printed names
-   - `AP_DRAW_OFFSET_FRACTION` (visual shift of the router marker; 0 draws it at the lab center)
-   - `MAP_WIDTH_METERS` (real-world width of the map; default 20)
+   - in `MapView.kt`, `AP_DRAW_OFFSET_FRACTION` (visual shift of the router marker; 0 draws it at the lab center) and `MAP_WIDTH_METERS` (real-world width of the map; default 20)
 5. Replace the BSSIDs in `RouterConfig.kt` with your own access points.
 
 ## Router Configuration
@@ -190,6 +190,7 @@ As a rough guide at one write per 25 s per user: about 20 users use ~23 MB/hour,
 | `LoginActivity.kt`, `RegisterActivity.kt` | Firebase email/password authentication |
 | `MainActivity.kt` | Dashboard, scan lifecycle, 25 s auto-refresh, detection statistics, ACTIVE USERS list |
 | `MapActivity.kt`, `MapView.kt` | Live map scanning (25 s interval) and Canvas rendering of the floor image, routers, detected-lab highlight, and user markers |
+| `GridConfig.kt` | Lab rectangles, 3×3 grid IDs, and pure grid geometry helpers |
 | `RouterConfig.kt` | Single BSSID-to-room mapping and shared distance calculation |
 | `PresenceRepository.kt` | Multi-subscriber publish, listen, and stale filtering of live presence |
 | `SignalGraphView.kt` | Dashboard RSSI graph |

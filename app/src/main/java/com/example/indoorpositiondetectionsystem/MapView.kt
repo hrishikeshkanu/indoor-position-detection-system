@@ -23,12 +23,8 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         // the AP marker does not cover the image's printed room names.
         private const val AP_DRAW_OFFSET_FRACTION = 0f
         private const val HIDE_IMAGE_ROOM_NAMES = true
-        private val LAB_RECT_FRACTIONS = mapOf(
-            "LAB 1" to listOf(0.03f, 0.03f, 0.45f, 0.44f),
-            "LAB 2" to listOf(0.55f, 0.03f, 0.97f, 0.44f),
-            "LAB 3" to listOf(0.03f, 0.56f, 0.45f, 0.97f),
-            "LAB 4" to listOf(0.55f, 0.56f, 0.97f, 0.97f)
-        )
+        private const val SHOW_GRID = true
+        private const val SHOW_GRID_LABELS = false
         // Covers the room name printed in the floor image; retune when replacing the image.
         private val IMAGE_ROOM_NAME_COVER_FRACTIONS = mapOf(
             "LAB 1" to listOf(0.17f, 0.205f, 0.33f, 0.285f),
@@ -62,6 +58,14 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val paintLabHighlightStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(200, 0, 255, 156); style = Paint.Style.STROKE
         strokeWidth = 3f
+    }
+    private val paintGridLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(70, 0, 229, 255); style = Paint.Style.STROKE
+        strokeWidth = 1.5f
+    }
+    private val paintGridLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(110, 230, 247, 255); textSize = 14f
+        textAlign = Paint.Align.CENTER
     }
     private val paintDotOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE; strokeWidth = 5f
@@ -291,9 +295,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         val referencePos = referenceMarker?.let { estimatePosition(it.distances) }
         if (!mapRect.isEmpty) {
             val detectedLab = referenceMarker?.distances?.entries
-                ?.filter { it.value < 90.0 && LAB_RECT_FRACTIONS.containsKey(it.key) }
+                ?.filter { it.value < 90.0 && GridConfig.LAB_RECT_FRACTIONS.containsKey(it.key) }
                 ?.minByOrNull { it.value }?.key
-            val fractions = detectedLab?.let { LAB_RECT_FRACTIONS[it] }
+            val fractions = detectedLab?.let { GridConfig.LAB_RECT_FRACTIONS[it] }
             if (fractions != null) {
                 val side = mapRect.width()
                 val labRect = RectF(
@@ -305,6 +309,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
                 canvas.drawRoundRect(labRect, 12f, 12f, paintLabHighlightFill)
                 canvas.drawRoundRect(labRect, 12f, 12f, paintLabHighlightStroke)
             }
+        }
+        if (SHOW_GRID && !mapRect.isEmpty) {
+            drawLabGrids(canvas)
         }
 
         for ((lab, point) in routers) {
@@ -485,6 +492,39 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             canvas.drawCircle(left + 18f, centerY, 6f, dotPaint)
             val baseline = centerY - (metrics.ascent + metrics.descent) / 2f
             canvas.drawText(label, left + 34f, baseline, paintLegendText)
+        }
+    }
+
+    private fun drawLabGrids(canvas: Canvas) {
+        val side = mapRect.width()
+        for ((_, fractions) in GridConfig.LAB_RECT_FRACTIONS) {
+            val left = mapRect.left + side * fractions[0]
+            val top = mapRect.top + side * fractions[1]
+            val right = mapRect.left + side * fractions[2]
+            val bottom = mapRect.top + side * fractions[3]
+            val cellWidth = (right - left) / GridConfig.GRID_COLS
+            val cellHeight = (bottom - top) / GridConfig.GRID_ROWS
+
+            for (col in 1 until GridConfig.GRID_COLS) {
+                val x = left + col * cellWidth
+                canvas.drawLine(x, top, x, bottom, paintGridLine)
+            }
+            for (row in 1 until GridConfig.GRID_ROWS) {
+                val y = top + row * cellHeight
+                canvas.drawLine(left, y, right, y, paintGridLine)
+            }
+
+            if (SHOW_GRID_LABELS) {
+                for (row in 0 until GridConfig.GRID_ROWS) {
+                    for (col in 0 until GridConfig.GRID_COLS) {
+                        val cellNumber = row * GridConfig.GRID_COLS + col + 1
+                        val x = left + (col + 0.5f) * cellWidth
+                        val y = top + (row + 0.5f) * cellHeight -
+                            (paintGridLabel.ascent() + paintGridLabel.descent()) / 2f
+                        drawHaloText(canvas, cellNumber.toString(), x, y, paintGridLabel)
+                    }
+                }
+            }
         }
     }
 
