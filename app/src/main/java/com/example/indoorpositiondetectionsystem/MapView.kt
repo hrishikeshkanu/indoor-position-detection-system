@@ -60,7 +60,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         strokeWidth = 3f
     }
     private val paintGridLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(70, 0, 229, 255); style = Paint.Style.STROKE
+        color = Color.argb(150, 255, 0, 0); style = Paint.Style.STROKE
         strokeWidth = 1.5f
     }
     private val paintGridLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -85,7 +85,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         strokeWidth = 6f; textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
     }
     private val paintGrid = Paint().apply {
-        color = Color.parseColor("#162840"); strokeWidth = 1.5f; style = Paint.Style.STROKE
+        color = Color.argb(150, 255, 0, 0); strokeWidth = 1.5f; style = Paint.Style.STROKE
     }
     private val paintBorder = Paint().apply {
         color = Color.parseColor("#00E5FF"); strokeWidth = 3f; style = Paint.Style.STROKE
