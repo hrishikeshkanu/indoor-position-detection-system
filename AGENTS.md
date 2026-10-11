@@ -86,7 +86,7 @@ Current state: login/registration, database connectivity, the **multi-user prese
 | `AP_DRAW_OFFSET_FRACTION` | 0f | Vertical shift of the drawn AP marker (fraction of `mapRect.width()`) |
 | `GridConfig.LAB_RECT_FRACTIONS` | see below | Room rectangles for the detected-lab highlight and grid overlay |
 | `SHOW_GRID` | true | Draw faint 3×3 grid lines within each lab |
-| `SHOW_GRID_LABELS` | false | Draw optional cell numbers on the map |
+| `SHOW_GRID_LABELS` | true | Draw cell numbers (1-9) in each grid cell |
 | Name-cover patch table | see below | Rectangles that hide the image's printed room names |
 | `HIDE_IMAGE_ROOM_NAMES` | true | Set false if the image has no printed names |
 
