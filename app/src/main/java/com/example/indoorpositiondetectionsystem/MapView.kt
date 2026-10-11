@@ -24,7 +24,7 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         private const val AP_DRAW_OFFSET_FRACTION = 0f
         private const val HIDE_IMAGE_ROOM_NAMES = true
         private const val SHOW_GRID = true
-        private const val SHOW_GRID_LABELS = false
+        private const val SHOW_GRID_LABELS = true
         // Covers the room name printed in the floor image; retune when replacing the image.
         private val IMAGE_ROOM_NAME_COVER_FRACTIONS = mapOf(
             "LAB 1" to listOf(0.17f, 0.205f, 0.33f, 0.285f),
@@ -59,12 +59,16 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         color = Color.argb(200, 0, 255, 156); style = Paint.Style.STROKE
         strokeWidth = 3f
     }
+    // Lab-grid overlay: cyan lines, clearly visible on the floor image.
+    // Under-stroke painted first so the cyan reads on both light and dark areas.
+    private val paintGridLineUnder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(160, 10, 22, 37); style = Paint.Style.STROKE; strokeWidth = 5f
+    }
     private val paintGridLine = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(150, 255, 0, 0); style = Paint.Style.STROKE
-        strokeWidth = 1.5f
+        color = Color.argb(200, 0, 229, 255); style = Paint.Style.STROKE; strokeWidth = 3f
     }
     private val paintGridLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(110, 230, 247, 255); textSize = 14f
+        color = Color.argb(170, 255, 255, 255); textSize = 18f
         textAlign = Paint.Align.CENTER
     }
     private val paintDotOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -84,8 +88,9 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         color = Color.parseColor("#0A1625"); style = Paint.Style.STROKE
         strokeWidth = 6f; textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
     }
-    private val paintGrid = Paint().apply {
-        color = Color.argb(150, 255, 0, 0); strokeWidth = 1.5f; style = Paint.Style.STROKE
+    // Used only for the fallback grid drawn when the floor bitmap is null.
+    private val paintFallbackGrid = Paint().apply {
+        color = Color.argb(150, 0, 229, 255); strokeWidth = 1.5f; style = Paint.Style.STROKE
     }
     private val paintBorder = Paint().apply {
         color = Color.parseColor("#00E5FF"); strokeWidth = 3f; style = Paint.Style.STROKE
@@ -266,12 +271,12 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             if (cellSize > 0f) {
                 var x = mapRect.left
                 while (x <= mapRect.right) {
-                    canvas.drawLine(x, mapRect.top, x, mapRect.bottom, paintGrid)
+                    canvas.drawLine(x, mapRect.top, x, mapRect.bottom, paintFallbackGrid)
                     x += cellSize
                 }
                 var y = mapRect.top
                 while (y <= mapRect.bottom) {
-                    canvas.drawLine(mapRect.left, y, mapRect.right, y, paintGrid)
+                    canvas.drawLine(mapRect.left, y, mapRect.right, y, paintFallbackGrid)
                     y += cellSize
                 }
             }
@@ -505,14 +510,28 @@ class MapView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             val cellWidth = (right - left) / GridConfig.GRID_COLS
             val cellHeight = (bottom - top) / GridConfig.GRID_ROWS
 
+            // Collect all line segments: outer border + interior divisions.
+            data class Line(val x1: Float, val y1: Float, val x2: Float, val y2: Float)
+            val lines = mutableListOf<Line>()
+            // Outer border (all 4 edges)
+            lines += Line(left, top, right, top)
+            lines += Line(right, top, right, bottom)
+            lines += Line(right, bottom, left, bottom)
+            lines += Line(left, bottom, left, top)
+            // Interior vertical dividers
             for (col in 1 until GridConfig.GRID_COLS) {
                 val x = left + col * cellWidth
-                canvas.drawLine(x, top, x, bottom, paintGridLine)
+                lines += Line(x, top, x, bottom)
             }
+            // Interior horizontal dividers
             for (row in 1 until GridConfig.GRID_ROWS) {
                 val y = top + row * cellHeight
-                canvas.drawLine(left, y, right, y, paintGridLine)
+                lines += Line(left, y, right, y)
             }
+
+            // Draw dark under-stroke first so cyan reads on both light and dark floor areas.
+            for (l in lines) canvas.drawLine(l.x1, l.y1, l.x2, l.y2, paintGridLineUnder)
+            for (l in lines) canvas.drawLine(l.x1, l.y1, l.x2, l.y2, paintGridLine)
 
             if (SHOW_GRID_LABELS) {
                 for (row in 0 until GridConfig.GRID_ROWS) {

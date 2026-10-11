@@ -33,7 +33,7 @@ The dashboard's **ACTIVE USERS** list and the map's user markers use `presence/{
 
 The map draws a square floor-plan image as its background, centered in the view (extra space stays dark). Routers, users, and labels are drawn on top of the image.
 
-- **Lab grid:** each lab has a faint 3×3 overlay, with optional cell-number labels disabled by default.
+- **Lab grid:** each lab has a clearly visible 3×3 overlay in cyan, with cell numbers (1–9) drawn inside each cell by default.
 - **Routers:** each access point is a small cyan dot at the center of its lab, labeled **LAB 1–LAB 4**, with the live distance in meters drawn below it. No distance is shown for a router that is not detected.
 - **Detected-lab highlight:** the room you are detected in gets a soft green highlight.
 - **Normal placement:** with two or more detected routers, the dot is placed from the nearest router toward the second nearest.
@@ -191,10 +191,13 @@ As a rough guide at one write per 25 s per user: about 20 users use ~23 MB/hour,
 | `MainActivity.kt` | Dashboard, scan lifecycle, 25 s auto-refresh, detection statistics, ACTIVE USERS list |
 | `MapActivity.kt`, `MapView.kt` | Live map scanning (25 s interval) and Canvas rendering of the floor image, routers, detected-lab highlight, and user markers |
 | `GridConfig.kt` | Lab rectangles, 3×3 grid IDs, and pure grid geometry helpers |
+| `GridLocalizationEngine.kt` | Pure Kotlin weighted k-NN localization engine; maps an `RssiVector` to a `LocalizationResult` via a pluggable `ReferenceSource` (model or fingerprint); not wired into Activities yet |
 | `RouterConfig.kt` | Single BSSID-to-room mapping and shared distance calculation |
 | `PresenceRepository.kt` | Multi-subscriber publish, listen, and stale filtering of live presence |
 | `SignalGraphView.kt` | Dashboard RSSI graph |
 | `res/drawable-nodpi/floor_map.jpeg` | Square floor-plan image used as the map background |
+
+> **Grid localization:** the current baseline uses a path-loss model (`ModelReferenceSource`) to estimate expected RSSI per grid cell. Fingerprint-based calibration (`FingerprintReferenceSource`) is planned for a later stage and will replace or complement the model source once calibration data is collected.
 
 ## Signal Quality Reference
 

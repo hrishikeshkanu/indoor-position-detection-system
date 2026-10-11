@@ -3,7 +3,7 @@
 ## Project overview
 Android app (Kotlin, Android Views, custom Canvas drawing) for indoor position detection using WiFi RSSI. The app scans nearby access points, compares signal strengths, and estimates the user's room/position in a lab environment (routers mapped to LAB 1–LAB 4). Firebase Authentication gates the dashboard, and Firebase Realtime Database stores scan data and live multi-user presence.
 
-Current state: login/registration, database connectivity, the **multi-user presence feature**, and the **floor-plan image map (Stages 1–6b)** are complete and working across devices (see "Feature history" below).
+Current state: login/registration, database connectivity, the **multi-user presence feature**, the **floor-plan image map (Stages 1–6b)**, and the **grid localization engine (Stage 2)** are complete (see "Feature history" below).
 
 ## Repository structure
 - `app/` – Android app module
@@ -14,6 +14,7 @@ Current state: login/registration, database connectivity, the **multi-user prese
     - `MapActivity.kt` – floor-map screen with its own live WiFi scanning (25 s Handler-driven, no self-triggering loop)
     - `MapView.kt` – custom Canvas view: floor-plan image background, AP markers, detected-lab highlight, multi-user markers, overlap spreading, crowd scaling, legend, caption
     - `GridConfig.kt` – single source of truth for lab rectangles, 3×3 grid IDs, and pure grid helpers
+    - `GridLocalizationEngine.kt` – pure Kotlin weighted k-NN localization engine; `RssiVector`, `LocalizationResult`, `ReferenceSource`, `ModelReferenceSource`, `FingerprintReferenceSource`, `CompositeReferenceSource`; no Android imports; NOT wired into Activities yet
     - `SignalGraphView.kt` – RSSI bar graph on the dashboard
     - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping; also holds `calculateDistance()`
     - `PresenceRepository.kt` – owner-keyed multi-subscriber publisher/reader of live user presence
@@ -42,7 +43,8 @@ Current state: login/registration, database connectivity, the **multi-user prese
 - Each lab contains a 3×3 grid with IDs `L{lab}-G{cell}`; lab numbers follow LAB 1–LAB 4, and cells are numbered row-major from top-left (G1) to bottom-right (G9).
 - The lab rectangle fractions are defined only in `GridConfig.kt` as `LAB_RECT_FRACTIONS`; retune them when replacing the floor image.
 - `GridConfig` provides pure helpers for creating and parsing IDs, finding cells and centers, and listing same-lab neighbors.
-- `MapView.SHOW_GRID` controls the faint grid-line overlay; `MapView.SHOW_GRID_LABELS` enables optional cell-number labels and is off by default.
+- `MapView.SHOW_GRID` controls the grid-line overlay; `MapView.SHOW_GRID_LABELS` enables cell-number labels (enabled by default as of Stage 2).
+- Grid lines are drawn in cyan (`#00E5FF`, alpha 200, 3 px) over a dark under-stroke (`#0A1625`, alpha 160, 5 px) so they read on both light and dark floor areas. The outer border of each lab is drawn as part of the same grid pass, making each 3×3 read as a complete bounded grid.
 
 ### Geometry
 - `mapRect` is the largest centered square inside the view (`side = min(w, h)`). Extra space is letterboxed with the dark background. Everything map-related is positioned relative to `mapRect`, never the whole view.
@@ -177,14 +179,34 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 6. Stage 6 / 6b – AP drawn at the lab center (offset 0f); labels read "LAB n"; the image's printed room names covered by patches (`HIDE_IMAGE_ROOM_NAMES`); Lab 1/2 patches moved to the correct height. ✅
 
 ### Grid localization
-1. Stage 1 – Grid model, pure helpers, faint 3×3 overlay, and unit tests. ✅
-2. Stage 2 – Planned. ⬜
+1. Stage 1 – Grid model, pure helpers, 3×3 overlay, and unit tests. ✅
+2. Stage 2 – GridLocalizationEngine (pure Kotlin k-NN), grid visibility fix, unit tests. ✅
 3. Stage 3 – Planned. ⬜
 4. Stage 4 – Planned. ⬜
 5. Stage 5 – Planned. ⬜
 6. Stage 6 – Planned. ⬜
 7. Stage 7 – Planned. ⬜
 8. Stage 8 – Planned. ⬜
+
+### Localization engine (Stage 2)
+`GridLocalizationEngine` maps an `RssiVector` to a `LocalizationResult` using weighted k-NN over a pluggable `ReferenceSource`. It is NOT wired into any Activity in Stage 2.
+
+#### Tunable constants (all in `GridLocalizationEngine.kt`)
+| Constant | Value | Purpose |
+|---|---|---|
+| `MISSING_RSSI` | -95.0 | Substitute used in distance math when an AP is not seen (-100) |
+| `DEFAULT_AP_WEIGHT` | 1.0 | Euclidean weight for non-dominant APs |
+| `STRONGEST_AP_WEIGHT` | 1.5 | Extra weight for the strongest live AP |
+| `ROOM_CONFIDENT_RSSI` | -75 | If the strongest AP is weaker than this, widen candidates to all 36 cells |
+
+#### Tunable constants (in `ModelReferenceSource`, inside `GridLocalizationEngine.kt`)
+| Constant | Value | Purpose |
+|---|---|---|
+| `TX_POWER` | -40.0 dBm | Reference RSSI at 1 m; must match `RouterConfig` |
+| `PATH_LOSS_N` | 3.0 | Path-loss exponent; must match `RouterConfig` |
+| `WALL_LOSS_DB` | 10.0 dB | Extra attenuation when the AP is in a different lab |
+| `MAP_WIDTH_METERS` | 20.0 m | Map width for fraction→metre conversion |
+| AP fractions | LAB 1 (0.25,0.25), LAB 2 (0.75,0.25), LAB 3 (0.25,0.75), LAB 4 (0.75,0.75) | AP logical centres as map fractions |
 
 ## Invariants (do not break)
 - BSSID map lives only in `RouterConfig.kt`; never redeclare it in activities.
@@ -205,6 +227,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - The `routers` map holds the LOGICAL router points used by `estimatePosition()`; visual-only shifts (like `AP_DRAW_OFFSET_FRACTION`) must be applied at draw time only.
 - Image-specific values (router fractions, lab rectangles, name-cover patches, `MAP_WIDTH_METERS`) must stay as named, tunable constants.
 - Always null-guard `r.BSSID` in scan loops.
+- Reference vectors (for localization) come only from a `ReferenceSource`; `GridLocalizationEngine` never reads Android APIs, WiFi state, or Firebase directly.
 
 ## Known issues / tech debt (fix only when relevant to the task, or when asked)
 - Android throttles `startScan()` (~4 per 2 min on API 28+); a 25 s interval is slightly above that, so some scans may be served from cache. The OS controls this.
