@@ -15,6 +15,7 @@ Current state: login/registration, database connectivity, the **multi-user prese
     - `MapView.kt` – custom Canvas view: floor-plan image background, AP markers, detected-lab highlight, multi-user markers, overlap spreading, crowd scaling, legend, caption
     - `GridConfig.kt` – single source of truth for lab rectangles, 3×3 grid IDs, and pure grid helpers
     - `GridLocalizationEngine.kt` – pure Kotlin weighted k-NN localization engine; `RssiVector`, `LocalizationResult`, `ReferenceSource`, `ModelReferenceSource`, `FingerprintReferenceSource`, `CompositeReferenceSource`; no Android imports; NOT wired into Activities yet
+    - `PositionTracker.kt` – pure Kotlin stabilizer: EWMA + hysteresis, not wired into Activities yet
     - `SignalGraphView.kt` – RSSI bar graph on the dashboard
     - `RouterConfig.kt` – the ONLY place for the BSSID → room mapping; also holds `calculateDistance()`
     - `PresenceRepository.kt` – owner-keyed multi-subscriber publisher/reader of live user presence
@@ -181,7 +182,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 ### Grid localization
 1. Stage 1 – Grid model, pure helpers, 3×3 overlay, and unit tests. ✅
 2. Stage 2 – GridLocalizationEngine (pure Kotlin k-NN), grid visibility fix, unit tests. ✅
-3. Stage 3 – Planned. ⬜
+3. Stage 3 – PositionTracker (smoothing + hysteresis), pure Kotlin unit tests. ✅
 4. Stage 4 – Planned. ⬜
 5. Stage 5 – Planned. ⬜
 6. Stage 6 – Planned. ⬜
@@ -208,6 +209,25 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 | `MAP_WIDTH_METERS` | 20.0 m | Map width for fraction→metre conversion |
 | AP fractions | LAB 1 (0.25,0.25), LAB 2 (0.75,0.25), LAB 3 (0.25,0.75), LAB 4 (0.75,0.75) | AP logical centres as map fractions |
 
+### Position tracker (Stage 3)
+`PositionTracker` stabilizes `GridLocalizationEngine` output over time using EWMA smoothing and multi-stage hysteresis. It is pure Kotlin with no Android imports; time is passed in (never read from the clock). It is NOT wired into Activities yet.
+
+#### Tunable constants (all in `PositionTracker.kt`)
+| Constant | Value | Purpose |
+|---|---|---|
+| `EWMA_ALPHA` | 0.4 | EWMA weight of the newest reading (0..1); higher = faster, noisier |
+| `MISSING_HOLD_SCANS` | 2 | Consecutive -100 scans an AP keeps its last smoothed value before becoming -100 |
+| `ADJACENT_CONFIRM_SCANS` | 2 | Consecutive wins needed to move to an adjacent cell in the same lab |
+| `JUMP_CONFIRM_SCANS` | 3 | Consecutive wins needed to jump to a non-adjacent cell in the same lab |
+| `HIGH_CONFIDENCE` | 0.6f | Confidence at or above which a same-lab jump needs only `HIGH_CONFIDENCE_JUMP_SCANS` |
+| `HIGH_CONFIDENCE_JUMP_SCANS` | 2 | Consecutive wins needed for a high-confidence jump in the same lab |
+| `ROOM_SWITCH_MARGIN_DB` | 4 | The new lab's smoothed RSSI must beat the current lab's by this many dB to switch rooms |
+| `ROOM_CONFIRM_SCANS` | 2 | Consecutive wins needed to switch to a different lab |
+| `NULL_HOLD_SCANS` | 3 | Consecutive null engine results the current grid is held before becoming null |
+| `NULL_CONFIDENCE_DECAY` | 0.7f | Confidence multiplier applied on each held (no-signal) scan |
+| `STALE_RESET_MS` | 90_000L | If this much time passes between updates, all history is discarded |
+| `NOT_SEEN` | -100 | Sentinel value for unseen AP |
+
 ## Invariants (do not break)
 - BSSID map lives only in `RouterConfig.kt`; never redeclare it in activities.
 - Only `LoginActivity` has the `MAIN`/`LAUNCHER` intent-filter.
@@ -228,6 +248,7 @@ presence/{uid}   { uid, name, detectedLab, signals, distances, timestamp }
 - Image-specific values (router fractions, lab rectangles, name-cover patches, `MAP_WIDTH_METERS`) must stay as named, tunable constants.
 - Always null-guard `r.BSSID` in scan loops.
 - Reference vectors (for localization) come only from a `ReferenceSource`; `GridLocalizationEngine` never reads Android APIs, WiFi state, or Firebase directly.
+- `PositionTracker` is pure Kotlin; time is injected, never read from the clock.
 
 ## Known issues / tech debt (fix only when relevant to the task, or when asked)
 - Android throttles `startScan()` (~4 per 2 min on API 28+); a 25 s interval is slightly above that, so some scans may be served from cache. The OS controls this.
