@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class GridLocalizationEngineTest {
 
@@ -46,7 +47,7 @@ class GridLocalizationEngineTest {
         for (gridId in GridConfig.ALL_GRID_IDS) {
             val ref = ModelReferenceSource.reference(gridId) ?: continue
             // Round float reference values to Int exactly as a live scan would produce them.
-            val rssiVector = RssiVector(ref.mapValues { (_, v) -> v.toInt() })
+            val rssiVector = RssiVector(ref.mapValues { (_, v) -> v.roundToInt() })
             val result = engine.localize(rssiVector)
             assertNotNull("Expected non-null result for grid $gridId", result)
             result!!
@@ -67,10 +68,7 @@ class GridLocalizationEngineTest {
         }
 
         // Report for transparency.
-        println(
-            "Self-reference round-trip: $exactMatches/36 exact matches. " +
-            "All non-exact results are same-lab neighbors (integer-rounding tolerance)."
-        )
+        println("Self-reference exact matches: $exactMatches/36")
 
         // The critical assertion: NO result may land outside the lab or outside
         // the Moore neighborhood of the queried cell.
@@ -78,6 +76,31 @@ class GridLocalizationEngineTest {
             "Round-trip violations (wrong lab or non-neighbor): $violations",
             violations.isEmpty()
         )
+    }
+
+    @Test
+    fun centerCellsMatchExactly() {
+        val centerCells = listOf("L1-G5", "L2-G5", "L3-G5", "L4-G5")
+        for (gridId in centerCells) {
+            val ref = ModelReferenceSource.reference(gridId)
+            assertNotNull("Reference expected for $gridId", ref)
+            val rssiVector = RssiVector(ref!!.mapValues { (_, v) -> v.roundToInt() })
+            val result = engine.localize(rssiVector)
+            assertNotNull("Result expected for $gridId", result)
+            assertEquals("Center cell $gridId must match exactly", gridId, result!!.gridId)
+        }
+    }
+
+    @Test
+    fun winnerIsBestMatchNotWorst() {
+        val centerCells = listOf("L1-G5", "L2-G5", "L3-G5", "L4-G5")
+        for (id in centerCells) {
+            val ref = ModelReferenceSource.reference(id)!!
+            val rssiVector = RssiVector(ref.mapValues { it.value.roundToInt() })
+            val result = engine.localize(rssiVector)
+            assertNotNull("Result expected for $id", result)
+            assertEquals(id, result!!.gridId)
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -215,7 +238,7 @@ class GridLocalizationEngineTest {
     fun confidenceIsWithinBounds() {
         for (gridId in GridConfig.ALL_GRID_IDS) {
             val ref = ModelReferenceSource.reference(gridId) ?: continue
-            val result = engine.localize(RssiVector(ref.mapValues { (_, v) -> v.toInt() }))
+            val result = engine.localize(RssiVector(ref.mapValues { (_, v) -> v.roundToInt() }))
             if (result != null) {
                 assertTrue(
                     "Confidence ${result.confidence} out of [0,1] for $gridId",
@@ -229,7 +252,7 @@ class GridLocalizationEngineTest {
     fun exactMatchHasHigherConfidenceThanAmbiguous() {
         // Exact self-reference for L1-G5 (center of LAB 1).
         val exactRef = ModelReferenceSource.reference("L1-G5")!!
-        val exactResult = engine.localize(RssiVector(exactRef.mapValues { (_, v) -> v.toInt() }))
+        val exactResult = engine.localize(RssiVector(exactRef.mapValues { (_, v) -> v.roundToInt() }))
 
         // Ambiguous: all labs roughly equal.
         val ambiguousResult = engine.localize(rssi(

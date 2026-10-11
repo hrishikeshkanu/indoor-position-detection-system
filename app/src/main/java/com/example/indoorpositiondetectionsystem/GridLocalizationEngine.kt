@@ -225,8 +225,8 @@ class GridLocalizationEngine(
 
         // The winner is the candidate with the highest summed weight.
         val winner = topK.maxWithOrNull(
-            compareByDescending<Candidate> { votes[it.gridId] ?: 0.0 }
-                .thenBy { it.dist }
+            compareBy<Candidate> { votes[it.gridId] ?: 0.0 }
+                .thenByDescending { it.dist }
         ) ?: return null
 
         // Confidence: gap between best and second-best distances.
